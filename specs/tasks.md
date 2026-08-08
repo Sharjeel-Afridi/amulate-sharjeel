@@ -19,11 +19,15 @@ Ordered. `[x]` done · `[~]` in progress · `[ ]` not started.
 - [x] End-to-end MCP client smoke test (`npm run smoke -w @car/mcp-marketplace`)
 
 ## Phase 2 — Walking skeleton (h3–5)
+- [x] Verify `@a2ui/react` + `@mcp-ui/client` APIs before building on them
+- [x] SEP-1865 JSON-RPC guest bridge (`packages/shared/src/mcp-app-protocol.ts`)
+- [x] React 19 web workspace, Vite, dark showroom skin
+- [x] Three-zone cockpit shell rendering, verified in browser
+- [ ] MCP Apps host bridge (host half of the JSON-RPC contract)
 - [ ] Express API + SSE stream
-- [ ] Claude Agent SDK loop connected to the MCP server
-- [ ] React shell, three-zone layout
-- [ ] A2UI renderer wired; one hardcoded surface renders end to end
-- [ ] **Gate: browser → agent → MCP → A2UI → pixels**
+- [ ] `AgentDriver` interface + scripted driver
+- [ ] A2UI renderer wired; one surface renders end to end
+- [ ] **Gate: browser → driver → MCP → A2UI → pixels**
 
 ## Phase 3 — Interview (h5–8)
 - [ ] `SessionState` + phase machine
