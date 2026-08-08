@@ -185,6 +185,30 @@ body::before {
   border-radius: var(--radius);
 }
 
+.msg--error {
+  align-self: flex-start;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  background: rgba(255, 107, 107, 0.08);
+  color: var(--danger);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+/* The agent-driven half of the rail. The phase stepper above it is chrome. */
+.rail-spec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+.render-errors {
+  position: absolute;
+  bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(255, 107, 107, 0.14);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: var(--danger);
+  padding: 7px 13px;
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
 .step {
   display: flex; align-items: center; gap: 9px;
   padding: 8px 11px;

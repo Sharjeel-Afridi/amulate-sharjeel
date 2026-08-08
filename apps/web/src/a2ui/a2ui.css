@@ -1,0 +1,244 @@
+/*
+ * Styles for the A2UI host.
+ *
+ * Two jobs. First, our four custom components have no styles of their own.
+ * Second, @a2ui/react 0.10.2 ships its basic-catalog CSS modules with empty
+ * class maps — the JS emits `class="undefined"` and the rules in
+ * node_modules/@a2ui/react/v0_9/index.css never match. Layout components
+ * (Row/Column/Card/List) survive because they use inline styles, but the form
+ * controls arrive naked, so we style the raw elements here. Everything is
+ * scoped under .a2ui-host and uses the --a2ui-* variables the runtime injects.
+ */
+
+.a2ui-host {
+  color: var(--a2ui-color-on-background);
+}
+
+.a2ui-host__surface + .a2ui-host__surface {
+  margin-top: var(--a2ui-spacing-l, 1.5rem);
+}
+
+/* Basic catalog controls — see note above. */
+
+.a2ui-host button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--a2ui-color-secondary, #ddd);
+  border-radius: var(--a2ui-border-radius, 8px);
+  background: var(--a2ui-color-surface, #fff);
+  color: var(--a2ui-color-on-surface, #333);
+  cursor: pointer;
+}
+
+.a2ui-host button:hover:not(:disabled) {
+  border-color: var(--a2ui-color-primary, #17e);
+}
+
+.a2ui-host button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.a2ui-host .chip {
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+}
+
+.a2ui-host .chip.selected {
+  background: var(--a2ui-color-primary, #17e);
+  border-color: var(--a2ui-color-primary, #17e);
+  color: var(--a2ui-color-on-primary, #fff);
+}
+
+.a2ui-host input[type='text'],
+.a2ui-host input[type='number'],
+.a2ui-host input[type='password'],
+.a2ui-host input[type='date'],
+.a2ui-host input[type='time'],
+.a2ui-host input[type='datetime-local'],
+.a2ui-host textarea {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--a2ui-color-secondary, #ddd);
+  border-radius: var(--a2ui-border-radius, 8px);
+  background: var(--a2ui-color-surface, #fff);
+  color: var(--a2ui-color-on-surface, #333);
+}
+
+.a2ui-host input[type='range'] {
+  width: 100%;
+  accent-color: var(--a2ui-color-primary, #17e);
+}
+
+/* CarCard */
+
+.a2ui-carcard {
+  display: flex;
+  gap: var(--a2ui-spacing-m, 1rem);
+  padding: var(--a2ui-spacing-m, 1rem);
+  border: 1px solid var(--a2ui-color-secondary, #ddd);
+  border-radius: var(--a2ui-border-radius, 10px);
+  background: var(--a2ui-color-surface, #fff);
+  color: var(--a2ui-color-on-surface, #333);
+  text-align: left;
+}
+
+.a2ui-carcard[role='button'] {
+  cursor: pointer;
+}
+
+.a2ui-carcard[role='button']:hover,
+.a2ui-carcard--selected {
+  border-color: var(--a2ui-color-primary, #17e);
+}
+
+.a2ui-carcard--selected {
+  box-shadow: inset 0 0 0 1px var(--a2ui-color-primary, #17e);
+}
+
+.a2ui-carcard__img {
+  width: 108px;
+  height: 72px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--a2ui-color-secondary, #eee);
+}
+
+.a2ui-carcard__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.a2ui-carcard__title {
+  font-weight: 600;
+}
+
+.a2ui-carcard__subtitle {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.a2ui-carcard__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.a2ui-carcard__tag {
+  font-size: 0.72em;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--a2ui-color-secondary, #eee);
+}
+
+/* MatchScore */
+
+.a2ui-matchscore {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82em;
+}
+
+.a2ui-matchscore__bar {
+  flex: 1;
+  min-width: 48px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--a2ui-color-secondary, #eee);
+  overflow: hidden;
+}
+
+.a2ui-matchscore__fill {
+  height: 100%;
+  background: var(--a2ui-color-primary, #17e);
+}
+
+.a2ui-matchscore__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.a2ui-matchscore__label {
+  opacity: 0.7;
+}
+
+/* PriceBadge */
+
+.a2ui-pricebadge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.a2ui-pricebadge__amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.a2ui-pricebadge__period,
+.a2ui-pricebadge__note {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.a2ui-pricebadge__note {
+  margin-left: 0.35rem;
+}
+
+/* ReasoningStep */
+
+.a2ui-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.25rem 0;
+}
+
+.a2ui-step__dot {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  border: 1px solid var(--a2ui-color-secondary, #ccc);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.a2ui-step--active .a2ui-step__dot {
+  border-color: var(--a2ui-color-primary, #17e);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--a2ui-color-primary, #17e) 25%, transparent);
+}
+
+.a2ui-step--done .a2ui-step__dot {
+  background: var(--a2ui-color-primary, #17e);
+  border-color: var(--a2ui-color-primary, #17e);
+  color: var(--a2ui-color-on-primary, #fff);
+}
+
+.a2ui-step--pending {
+  opacity: 0.55;
+}
+
+.a2ui-step__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.a2ui-step__title {
+  font-size: 0.9em;
+}
+
+.a2ui-step__detail {
+  font-size: 0.78em;
+  opacity: 0.7;
+}

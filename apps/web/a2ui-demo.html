@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A2UI host harness</title>
+    <!-- Dev-only page for exercising src/a2ui in isolation. Not part of the app. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 1.5rem;
+        background: var(--a2ui-color-background, #eee);
+        color: var(--a2ui-color-on-background, #222);
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.25rem;
+      }
+      h2 {
+        font-size: 0.95rem;
+        margin: 0 0 0.35rem;
+      }
+      code {
+        font-size: 0.75rem;
+      }
+      .demo__head p {
+        margin: 0 0 1.25rem;
+        font-size: 0.8rem;
+        opacity: 0.7;
+      }
+      .demo__replay {
+        font: inherit;
+        font-size: 0.75rem;
+        margin-left: 0.35rem;
+        padding: 0.15rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid rgba(128, 128, 128, 0.5);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .demo__cols {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 22rem;
+        gap: 1.5rem;
+        align-items: start;
+      }
+      .demo__log {
+        position: sticky;
+        top: 1.5rem;
+        padding: 1rem;
+        border-radius: 10px;
+        background: var(--a2ui-color-surface, #fff);
+        border: 1px solid rgba(128, 128, 128, 0.3);
+      }
+      .demo__hint,
+      .demo__empty {
+        font-size: 0.75rem;
+        opacity: 0.7;
+      }
+      .demo__log ul {
+        list-style: none;
+        margin: 0.75rem 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .demo__entry {
+        font-size: 0.72rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        line-height: 1.45;
+        word-break: break-word;
+      }
+      .demo__kind {
+        display: inline-block;
+        min-width: 3.6rem;
+        margin-right: 0.4rem;
+        padding: 0 0.35rem;
+        border-radius: 4px;
+        background: rgba(128, 128, 128, 0.2);
+      }
+      .demo__entry--action .demo__kind {
+        background: #17e;
+        color: #fff;
+      }
+      .demo__entry--error .demo__kind {
+        background: #c33;
+        color: #fff;
+      }
+      @media (max-width: 900px) {
+        .demo__cols {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="a2ui-demo-root"></div>
+    <script type="module" src="/src/a2ui/demo-main.tsx"></script>
+  </body>
+</html>

@@ -20,14 +20,23 @@ async function connect(): Promise<Client> {
   return c
 }
 
-/** Lazily connect, and collapse concurrent first-callers onto one connection. */
+/**
+ * Lazily connect, collapsing concurrent first-callers onto one attempt.
+ *
+ * The in-flight promise is cleared in `finally`, not on success — caching a
+ * rejected promise would mean one failed attempt (the marketplace still booting,
+ * say) permanently poisons every later call with no way to recover.
+ */
 export async function mcp(): Promise<Client> {
   if (client) return client
-  connecting ??= connect().then((c) => {
-    client = c
-    connecting = undefined
-    return c
-  })
+  connecting ??= connect()
+    .then((c) => {
+      client = c
+      return c
+    })
+    .finally(() => {
+      connecting = undefined
+    })
   return connecting
 }
 

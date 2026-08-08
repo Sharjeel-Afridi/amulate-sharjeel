@@ -193,6 +193,12 @@ export const BRIDGE_JS = `
   }
 
   window.addEventListener('message', function (event) {
+    // Only the host may talk to us. Under an opaque origin event.origin is the
+    // string "null" and proves nothing, so identity is checked on the window
+    // instead. Without this, any frame could resolve a pending tools/call and
+    // tell this widget its booking succeeded when nothing was submitted.
+    if (event.source !== window.parent) return;
+
     var msg = event.data;
     if (!msg || msg.jsonrpc !== '2.0') return;
 
@@ -211,21 +217,43 @@ export const BRIDGE_JS = `
   });
 
   window.callTool = function (name, args) {
-    return request('tools/call', { name: name, arguments: args });
+    return request('tools/call', { name: name, arguments: args }).then(function (result) {
+      // A CallToolResult carrying isError is a failure the widget must show, not
+      // a success with awkward contents. Surface it as a rejection so callers
+      // cannot mistake it for a completed booking.
+      if (result && result.isError) {
+        var detail = (result.content || [])
+          .map(function (c) { return c && c.text; })
+          .filter(Boolean)
+          .join(' ');
+        throw new Error(detail || 'The server rejected that request.');
+      }
+      return result;
+    });
   };
   window.reportSize = reportSize;
 
   // The guest opens the handshake. If the host never answers we still render —
   // a widget that silently stays blank is worse than one that works uncoupled.
-  request('ui/initialize', { protocolVersion: PROTOCOL_VERSION, appCapabilities: {} })
-    .then(function (result) {
-      notify('ui/notifications/initialized');
-      if (result && result.hostContext) applyHostContext(result.hostContext);
-      reportSize();
-    })
-    .catch(function () { reportSize(); });
+  var settled = false;
+  function finish(result) {
+    if (settled) return;
+    settled = true;
+    // Announce readiness before reporting size, so a host that gates on
+    // initialized does not discard the opening measurement.
+    notify('ui/notifications/initialized');
+    if (result && result.hostContext) applyHostContext(result.hostContext);
+    reportSize();
+    if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+  }
 
-  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+  request('ui/initialize', { protocolVersion: PROTOCOL_VERSION, appCapabilities: {} })
+    .then(finish)
+    .catch(function () { finish(null); });
+
+  // A host that never answers must not leave the widget unmeasured forever.
+  setTimeout(function () { finish(null); }, 2000);
+
   window.addEventListener('load', reportSize);
 })();
 `
