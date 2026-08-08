@@ -36,12 +36,30 @@ re-ranks, and the catalogue updates in place — without restarting the intervie
 
 ## Functional requirements
 
-### FR1 — Interview
+### FR1 — Interview (chat + form hybrid)
 - Conversational preference elicitation inside the app UI.
 - Captures: `mode` (rent|buy), `useCase`, `category`, `budget`, `targetDate`,
   plus mode-specific fields (rental window; purchase mileage/year tolerance).
+- **Not a form and not pure chat.** The agent asks conversationally but renders
+  the appropriate input control inline in the chat, via A2UI:
+
+  | Question | Control |
+  |---|---|
+  | rent or buy | `ChoicePicker`, chips |
+  | budget | `Slider`, live currency readout |
+  | target / return date | `DateTimeInput` |
+  | priorities (boot, economy, seats) | `ChoicePicker`, multi-select chips |
+  | anything else | free-text composer, always available |
+
+- Free text is accepted at any point and overrides the controls — a user who
+  types "make it €500 and I need seven seats" updates both state and controls.
 - Asks only for missing fields; never re-asks what the user already stated.
-- Offers quick-reply chips so the interview is fast, not an interrogation.
+
+### FR1a — The spec is a visible artefact
+- Captured preferences assemble into a visible spec in the journey rail as the
+  interview proceeds.
+- Before research begins the agent states the spec back in one sentence, giving
+  the user a correction point before any searching happens.
 
 ### FR2 — Research
 - Searches a mock marketplace of **≥300 listings**, **10 categories**,
@@ -51,8 +69,12 @@ re-ranks, and the catalogue updates in place — without restarting the intervie
 
 ### FR3 — Ranked recommendations
 - Returns an ordered shortlist with a numeric match score per listing.
-- **Every listing carries a one-line, listing-specific rationale** from the
-  agent. Generic filler ("great choice") does not satisfy this.
+- **Every rationale must cite a criterion the user actually stated during the
+  interview**, naming the value that earned the position — e.g. "biggest boot at
+  635 L of anything under your €400". Generic praise ("a great family choice")
+  does not satisfy this requirement.
+- Each listing exposes its `ScoreFactor[]` so the user can expand the ranking
+  and see which stated preference contributed what.
 - The user can request a side-by-side comparison of any subset.
 
 ### FR4 — Booking and payment (MCP Apps — mandatory)
