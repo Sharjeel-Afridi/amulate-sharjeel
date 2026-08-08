@@ -1,19 +1,20 @@
 import { Agent, MCPServerStreamableHttp, run, setTracingDisabled, tool } from '@openai/agents'
 import { setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents-openai'
-import { CATEGORIES, type Criterion, screen } from '@car/shared'
+import { CATEGORIES } from '@car/shared'
 import OpenAI from 'openai'
 import { z } from 'zod'
-import {
-  buildCatalogueSurface,
-  buildJourneySurface,
-  buildQuestionSurface,
-  buildSearchingSurface,
-  buildSpecSurface,
-} from './surfaces.js'
-import { QUESTIONS, dealbreakerCriteria, describeSpecFull, requirementCriteria } from './interview.js'
+import { buildJourneySurface } from './surfaces.js'
+import { dealbreakerCriteria } from './interview.js'
 import type { AgentDriver, TurnContext } from './driver.js'
-import { callToolForApp, callToolJson } from './mcp.js'
-import { rank } from './ranking.js'
+import {
+  advance,
+  handleBookingSubmitted,
+  handlePaymentConfirmed,
+  recordAnswer,
+  runResearch,
+  showSpec,
+  startBooking,
+} from './journey.js'
 
 /**
  * The model-backed driver.
@@ -22,10 +23,21 @@ import { rank } from './ranking.js'
  * an OpenAI-compatible endpoint, so Gemini and Groq free tiers work by changing
  * a base URL. The harness is one of the three the brief allows.
  *
- * The model's job is deliberately narrow — decide which question to ask next,
- * extract preferences from free text, choose tools, and phrase replies. It never
- * scores a car and never composes a structured surface; those are deterministic
- * code, which is why a free-tier model is sufficient here.
+ * The model is reached for exactly one thing: a message the user typed. Every
+ * rendered control — chips, sliders, the date picker, the spec confirmation, a
+ * tapped car, a submitted MCP App — is handled deterministically in `journey.ts`,
+ * which this driver shares with the scripted one.
+ *
+ * That boundary is drawn where the ambiguity is. A chip already carries a value
+ * the question plan constrained, tagged with the field it fills; a typed sentence
+ * does not. Routing the first kind through a model added a round trip and a
+ * rate-limit risk to reach the same answer a switch statement gives — and, worse,
+ * made recording it contingent on the model choosing to call a tool, so a
+ * perfectly good answer could vanish while the interview moved on regardless.
+ *
+ * Even for typed text the model's job stays narrow: extract preferences, choose
+ * tools, phrase replies. It never scores a car and never composes a structured
+ * surface. That is why a free-tier model is sufficient here.
  */
 
 const BASE_URLS: Record<string, string> = {
@@ -121,38 +133,39 @@ function configureProvider(cfg: AgentConfig): void {
   configured = true
 }
 
-const SYSTEM_PROMPT = `You are a car matchmaking concierge. You help someone rent or buy a car by
-interviewing them properly, then searching a marketplace and explaining your recommendations.
+const SYSTEM_PROMPT = `You are a car matchmaking concierge. You help someone rent or buy a car, then
+explain your recommendations.
 
-## How the conversation goes
+## What you drive, and what you do not
 
-1. INTERVIEW. Ask one question at a time using ask_question. Never ask two at once.
-   Use record_preferences whenever the person tells you something, including things
-   they volunteer that you did not ask about.
-   Skip questions you already know the answer to — if they said "renting an SUV for
-   the family" you already have mode, category and use case.
-   Ask the dealbreakers question last. It is the most useful one.
+The interview drives itself. Its questions appear in the chat as controls the
+person taps, and the app records those answers before you ever see them. You do
+NOT ask the interview questions, you do NOT decide which one comes next, and you
+do NOT need to track how far through it they are. The "Current state" block below
+already tells you everything that has been established.
 
-2. SPEC. When you have enough, call show_spec. This displays what you will search on
-   and asks them to confirm. Do NOT search before they confirm.
+You handle one thing: a message the person TYPED. That is always one of these.
 
-3. RESEARCH. Once confirmed, call search_and_rank exactly once.
+- They told you something about their needs → call record_preferences, once per
+  fact, then reply in a sentence. This is the common case. It works at any point,
+  including in the middle of the interview: "actually make it 500 a month" should
+  land immediately.
+- They named an absolute dealbreaker → call add_dealbreakers.
+- They gave an instruction — "that's enough questions", "search now", "book the
+  Volvo" → call show_spec, search_and_rank or open_booking to match.
+- They asked something about a car or the results → answer from the tool output.
+- Anything else → just reply. Not every message needs a tool.
 
-4. RECOMMEND. Describe the top result using the rationale the tool returns. Do not
-   invent reasons — the rationale already cites what they told you.
-
-5. BOOK. When they choose a car, call open_booking with its listing id.
+Do not re-ask something the state block already shows. Do not narrate the
+interview's progress; the person can see it.
 
 ## How a turn works — read this carefully
 
 Each user message is ONE turn. In a turn you may call a few tools, and then you
 MUST finish by writing a short reply. The reply is what the user reads.
 
-- After calling ask_question, your reply IS that question, phrased naturally.
-  Do NOT call ask_question again in the same turn.
-- record_preferences saves ONE fact per call. If the user told you three things,
-  call it three times, then reply.
-- Never call ask_question twice in one turn.
+- record_preferences saves ONE fact per call. If they told you three things, call
+  it three times, then reply.
 - If you have already called a tool and know what to say, say it. Do not keep
   calling tools looking for more to do.
 
@@ -160,32 +173,24 @@ A turn that ends without text is a failure — the user sees nothing.
 
 ## Rules
 
-- One question per turn. Short, conversational, no preamble.
+- Short, conversational, no preamble. One or two sentences.
 - Never invent listings, prices or specifications. Everything factual comes from tools.
 - Never claim a car has a feature the tool output does not show.
-- If a dealbreaker rules out everything, say which one and by how much, and offer to relax it.
-- Keep replies to one or two sentences. The UI shows the detail; you provide the thread.
+- When describing results, use the rationale search_and_rank returns rather than
+  writing your own — it already cites what they told you.
+- If a dealbreaker rules out everything, say which one and by how much, and offer
+  to relax it.
 - Currency is euros. Rentals are priced per month, purchases as a total.`
 
-/** Tools are rebuilt each turn so they can write into that turn's context. */
+/**
+ * Tools are rebuilt each turn so they can write into that turn's context.
+ *
+ * There is deliberately no `ask_question` tool. The interview's sequence belongs
+ * to the question plan and the rendered controls, and giving the model a way to
+ * push a different question mid-flow only lets the two disagree about where the
+ * conversation is.
+ */
 function buildTools(ctx: TurnContext) {
-  const askQuestion = tool({
-    name: 'ask_question',
-    description:
-      'Ask the user one interview question and render its input control in the chat. ' +
-      `Valid ids: ${QUESTIONS.map((q) => q.id).join(', ')}.`,
-    parameters: z.object({ questionId: z.string() }),
-    execute: async ({ questionId }) => {
-      const q = QUESTIONS.find((x) => x.id === questionId)
-      if (!q) return `No question with id ${questionId}`
-      ctx.patchInterview({ pending: q.id })
-      ctx.a2ui(buildQuestionSurface(q))
-      // Directive rather than descriptive: a tool result that reads like a
-      // suggestion invites another tool call instead of an answer.
-      return `Done. Now STOP calling tools and reply with this question in your own words: "${q.ask}"`
-    },
-  })
-
   const recordPreferences = tool({
     name: 'record_preferences',
     description:
@@ -261,21 +266,16 @@ function buildTools(ctx: TurnContext) {
     },
   })
 
-  const showSpec = tool({
+  const showSpecTool = tool({
     name: 'show_spec',
     description:
-      'Assemble the spec from everything gathered and show it for confirmation. ' +
-      'Call this when the interview is done. Do not search until the user confirms.',
+      'Assemble the spec from everything gathered and show it for confirmation. Use this ' +
+      'only if the user asks to cut the questions short — otherwise the interview reaches ' +
+      'it on its own. Do not search until the user confirms.',
     parameters: NO_ARGS,
     execute: async () => {
-      const strict = (ctx.state.preferences.notes ?? []).includes('strict-budget')
-      const criteria: Criterion[] = [
-        ...ctx.state.criteria.filter((c) => c.kind === 'exclusion'),
-        ...requirementCriteria(ctx.state.preferences, strict),
-      ]
-      ctx.setCriteria(criteria)
       ctx.patchInterview({ complete: true })
-      ctx.a2ui(buildSpecSurface(describeSpecFull(ctx.state.preferences, criteria)))
+      showSpec(ctx)
       return 'Spec shown. Wait for the user to confirm before searching.'
     },
   })
@@ -288,56 +288,10 @@ function buildTools(ctx: TurnContext) {
       'with rationales you should quote rather than rewrite.',
     parameters: NO_ARGS,
     execute: async () => {
-      const prefs = ctx.state.preferences
-      ctx.setPhase('research')
-      ctx.a2ui(buildSearchingSurface())
-
-      const result = await callToolJson<{
-        totalScanned: number
-        matched: number
-        relaxed: string[]
-        listings: never[]
-      }>('search_listings', { mode: prefs.mode ?? 'rent', category: prefs.category, limit: 30 })
-
-      const { qualified, ruledOut, attribution } = screen(result.listings, ctx.state.criteria)
-      ctx.setRuledOut(ruledOut)
-      ctx.setSearchSummary({
-        totalScanned: result.totalScanned,
-        matched: result.listings.length,
-        shortlisted: qualified.length,
-        ruledOut: ruledOut.length,
-        relaxed: result.relaxed,
-      })
-      ctx.step(
-        `Screened ${result.listings.length} candidates → ${qualified.length} qualify`,
-        attribution.map((a) => `${a.criterion.label} removed ${a.eliminated}`).join(' · ') || 'nothing excluded',
-      )
-
-      if (qualified.length === 0) {
-        ctx.setPhase('recommend')
-        return JSON.stringify({
-          qualified: 0,
-          bindingConstraint: attribution[0]
-            ? { label: attribution[0].criterion.label, eliminated: attribution[0].eliminated }
-            : null,
-        })
-      }
-
-      const shortlist = rank(qualified.map((a) => a.listing), prefs).slice(0, 8)
-      ctx.setShortlist(shortlist)
-      ctx.setPhase('recommend')
-      ctx.a2ui(buildCatalogueSurface(shortlist))
-
-      return JSON.stringify({
-        qualified: shortlist.length,
-        ruledOut: ruledOut.length,
-        top: shortlist.slice(0, 3).map((r) => ({
-          listingId: r.listing.id,
-          name: `${r.listing.brand} ${r.listing.model}`,
-          score: r.score,
-          rationale: r.rationale,
-        })),
-      })
+      // `narrate: false` — the reply is this turn's job, and the same results
+      // described twice in two voices reads as a bug.
+      const summary = await runResearch(ctx, { narrate: false })
+      return JSON.stringify(summary)
     },
   })
 
@@ -346,20 +300,12 @@ function buildTools(ctx: TurnContext) {
     description: 'Open the booking form for a listing the user chose. Use the listing id.',
     parameters: z.object({ listingId: z.string() }),
     execute: async ({ listingId }) => {
-      ctx.setPhase('book')
-      const prefs = ctx.state.preferences
-      const { html } = await callToolForApp('start_booking', {
-        listingId,
-        startDate: prefs.targetDate,
-        endDate: prefs.returnDate,
-      })
-      ctx.step('Opened booking form', 'Rendered in chat as an MCP App')
-      ctx.mcpApp('start_booking', html)
+      await startBooking(ctx, listingId)
       return 'Booking form is on screen. The user fills it in themselves.'
     },
   })
 
-  return [askQuestion, recordPreferences, addDealbreakers, showSpec, searchAndRank, openBooking]
+  return [recordPreferences, addDealbreakers, showSpecTool, searchAndRank, openBooking]
 }
 
 export class LlmAgentDriver implements AgentDriver {
@@ -440,48 +386,41 @@ export class LlmAgentDriver implements AgentDriver {
     }
   }
 
+  /**
+   * Rendered controls never reach the model.
+   *
+   * The value arrived constrained by the question plan and labelled with the
+   * field it fills, so the whole of its meaning is a lookup. Handling it here
+   * costs nothing, cannot be dropped, and leaves the free tier's request budget
+   * for the messages that actually need reading.
+   */
   async handleUiAction(
     ctx: TurnContext,
     name: string,
     context: Record<string, unknown>,
   ): Promise<void> {
-    // UI actions are translated into a message so the model sees them as part of
-    // the same conversation rather than as a side channel it has to reconcile.
     if (name === 'answerQuestion') {
-      const value = Array.isArray(context.value) ? context.value.join(', ') : String(context.value ?? '')
-      ctx.patchInterview({
-        answered: [...ctx.state.interview.answered, String(context.questionId ?? '')],
-        pending: undefined,
-      })
-      return this.handleUserMessage(ctx, `[answered ${String(context.questionId)}]: ${value}`)
+      recordAnswer(ctx, String(context.questionId ?? ''), context.value)
+      advance(ctx)
+      return
     }
+
     if (name === 'confirmSpec') {
       ctx.patchInterview({ confirmed: true })
-      return this.handleUserMessage(ctx, 'Yes, that spec is right. Please search now.')
+      await runResearch(ctx)
+      return
     }
+
     if (name === 'selectCar') {
-      return this.handleUserMessage(ctx, `I want to book listing ${String(context.listingId)}.`)
+      const listingId = String(context.listingId ?? '')
+      if (listingId) await startBooking(ctx, listingId)
     }
   }
 
+  /** Likewise for MCP Apps: the widget reported a fact, not an opinion. */
   async handleAppToolResult(ctx: TurnContext, toolName: string, result: unknown): Promise<void> {
-    if (toolName === 'submit_booking') {
-      const booking = result as { bookingId: string; total: number; listing: string }
-      ctx.step('Booking held', `${booking.bookingId} · €${booking.total}`)
-      const { html } = await callToolForApp('start_checkout', { bookingId: booking.bookingId })
-      ctx.mcpApp('start_checkout', html)
-      return this.handleUserMessage(
-        ctx,
-        `[system] Booking ${booking.bookingId} for ${booking.listing} was held at €${booking.total}. ` +
-          'The mock checkout is now on screen. Tell the user briefly.',
-      )
-    }
-    if (toolName === 'confirm_payment') {
-      ctx.setPhase('done')
-      ctx.step('Payment settled (simulated)')
-      const paid = result as { confirmation: string }
-      ctx.say(paid.confirmation)
-    }
+    if (toolName === 'submit_booking') return handleBookingSubmitted(ctx, result)
+    if (toolName === 'confirm_payment') return handlePaymentConfirmed(ctx, result)
   }
 }
 

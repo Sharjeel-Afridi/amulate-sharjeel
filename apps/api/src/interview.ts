@@ -1,4 +1,13 @@
-import { CATEGORIES, CATEGORY_LABELS, type Criterion, type Mode, type Preferences } from '@car/shared'
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  type Category,
+  type Criterion,
+  type FuelType,
+  type Mode,
+  type Preferences,
+  type Transmission,
+} from '@car/shared'
 
 /**
  * The interview plan.
@@ -177,24 +186,108 @@ export const QUESTIONS: Question[] = [
   },
 ]
 
-/** The next unanswered question, respecting mode. Undefined means done. */
+/**
+ * The preference field a question fills.
+ *
+ * Every topic but `dealbreakers` names a `Preferences` key — that one produces
+ * criteria instead, so it has no field and can never be considered already known.
+ */
+function topicField(q: Question): keyof Preferences | undefined {
+  return q.topic === 'dealbreakers' ? undefined : (q.topic as keyof Preferences)
+}
+
+/** Whether a question is still worth putting to the user. */
+function isPending(q: Question, prefs: Preferences, answered: Set<string>): boolean {
+  if (answered.has(q.id)) return false
+  if (q.appliesTo && prefs.mode && q.appliesTo !== prefs.mode) return false
+  // Mode gates every mode-specific question, so it must be answered first.
+  if (q.appliesTo && !prefs.mode) return false
+  // Already told us — in an opening sentence, or anywhere else in the chat.
+  // Asking again reads as not having listened, and it is the single most common
+  // complaint about scripted interviews.
+  const field = topicField(q)
+  if (field && prefs[field] !== undefined) return false
+  return true
+}
+
+/** The next question worth asking, respecting mode. Undefined means done. */
 export function nextQuestion(prefs: Preferences, answered: Set<string>): Question | undefined {
-  return QUESTIONS.find((q) => {
-    if (answered.has(q.id)) return false
-    if (q.appliesTo && prefs.mode && q.appliesTo !== prefs.mode) return false
-    // Mode gates every mode-specific question, so it must be answered first.
-    if (q.appliesTo && !prefs.mode) return false
-    return true
-  })
+  return QUESTIONS.find((q) => isPending(q, prefs, answered))
 }
 
 export function questionsRemaining(prefs: Preferences, answered: Set<string>): number {
-  return QUESTIONS.filter((q) => {
-    if (answered.has(q.id)) return false
-    if (q.appliesTo && prefs.mode && q.appliesTo !== prefs.mode) return false
-    if (q.appliesTo && !prefs.mode) return false
-    return q.optional !== true
-  }).length
+  return QUESTIONS.filter((q) => isPending(q, prefs, answered) && q.optional !== true).length
+}
+
+/** What one answered question contributes. */
+export interface AnswerOutcome {
+  patch: Preferences
+  /** Raw dealbreaker values, for `dealbreakerCriteria`. Empty for every other question. */
+  dealbreakers: string[]
+}
+
+/**
+ * Maps one answered question onto preferences.
+ *
+ * This is the whole of what a form answer means. The control already constrained
+ * the value to a valid option and the question id already says which field it
+ * fills, so there is nothing here for a model to work out — running this through
+ * one would only add latency and a chance to drop the answer.
+ */
+export function answerToPreferences(questionId: string, raw: unknown): AnswerOutcome {
+  const values = (Array.isArray(raw) ? raw.map(String) : [String(raw ?? '')]).map((v) => v.trim())
+  const first = values[0] ?? ''
+  const patch: Preferences = {}
+  const dealbreakers: string[] = []
+
+  switch (questionId) {
+    case 'mode':
+      if (first === 'rent' || first === 'buy') patch.mode = first
+      break
+    case 'useCase':
+      if (first) patch.useCase = first
+      break
+    case 'passengers':
+      patch.seatsMin = Number(first) || undefined
+      break
+    case 'category':
+      if (first && first !== 'unsure') patch.category = first as Category
+      break
+    case 'budget':
+    case 'budgetBuy':
+      patch.budgetMax = Number(first) || undefined
+      break
+    case 'targetDate':
+      if (first) patch.targetDate = first.slice(0, 10)
+      break
+    case 'returnDate':
+      if (first) patch.returnDate = first.slice(0, 10)
+      break
+    case 'luggage':
+      patch.bootLitresMin = Number(first) || undefined
+      break
+    case 'fuel':
+      if (first && first !== 'any') patch.fuel = first as FuelType
+      break
+    case 'transmission':
+      if (first && first !== 'any') patch.transmission = first as Transmission
+      break
+    case 'mileage':
+      patch.maxMileageKm = Number(first) || undefined
+      break
+    case 'dealbreakers':
+      dealbreakers.push(...values.filter((v) => v && v !== 'none'))
+      break
+  }
+
+  // "Not much luggage" and "mileage doesn't matter" both answer 0, which means
+  // no constraint rather than a constraint of zero. Dropping the key entirely is
+  // what stops it being written into preferences as a real limit.
+  for (const key of Object.keys(patch) as (keyof Preferences)[]) {
+    if (patch[key] === undefined) delete patch[key]
+  }
+
+  return { patch, dealbreakers }
 }
 
 /**
