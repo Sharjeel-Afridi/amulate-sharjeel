@@ -1,0 +1,26 @@
+{
+  "name": "@car/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@a2ui/react": "^0.10.2",
+    "@a2ui/web_core": "^0.10.6",
+    "@car/shared": "*",
+    "@mcp-ui/client": "^7.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.3.1"
+  }
+}
