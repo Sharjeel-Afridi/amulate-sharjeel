@@ -242,3 +242,211 @@
   font-size: 0.78em;
   opacity: 0.7;
 }
+
+/* ==========================================================================
+   Game car-select treatment.
+   ==========================================================================
+   The stage is the moment the product has to feel good, so the card is staged
+   like a vehicle-select screen rather than a search result: the car sits on a
+   lit plinth, spotlit from below, casting a real shadow, with the spec reading
+   as stats underneath. Overrides the base rules above rather than replacing
+   them, so the component markup is untouched.
+*/
+
+.a2ui-host .a2ui-carcard {
+  display: block;
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #171a20 0%, #0d0f13 62%, #0b0d10 100%);
+  text-align: left;
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1),
+    border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+/* The pool of light the car stands in. */
+.a2ui-host .a2ui-carcard::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 78%;
+  height: 128px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(58% 68% at 50% 78%, rgba(200, 255, 61, 0.13), transparent 72%),
+    radial-gradient(66% 76% at 50% 34%, rgba(255, 255, 255, 0.07), transparent 74%);
+  pointer-events: none;
+}
+
+/* The floor the light falls on. */
+.a2ui-host .a2ui-carcard::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 126px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  pointer-events: none;
+}
+
+.a2ui-host .a2ui-carcard[role='button']:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+.a2ui-host .a2ui-carcard--selected {
+  border-color: var(--accent, #c8ff3d);
+  box-shadow: 0 0 0 1px var(--accent, #c8ff3d), 0 12px 34px rgba(200, 255, 61, 0.14);
+}
+.a2ui-host .a2ui-carcard--selected::before {
+  background:
+    radial-gradient(58% 68% at 50% 78%, rgba(200, 255, 61, 0.26), transparent 72%),
+    radial-gradient(66% 76% at 50% 34%, rgba(255, 255, 255, 0.1), transparent 74%);
+}
+
+/* The hero. Contain, never crop — a cropped car reads as a mistake. */
+.a2ui-host .a2ui-carcard__img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 124px;
+  padding: 12px 18px 0;
+  object-fit: contain;
+  border-radius: 0;
+  background: none;
+  filter: drop-shadow(0 12px 14px rgba(0, 0, 0, 0.55));
+}
+
+.a2ui-host .a2ui-carcard__body {
+  position: relative;
+  z-index: 1;
+  gap: 7px;
+  padding: 14px 15px 15px;
+}
+
+.a2ui-host .a2ui-carcard__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text, #f2f4f7);
+}
+
+.a2ui-host .a2ui-carcard__subtitle {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint, #626b75);
+  opacity: 1;
+}
+
+.a2ui-host .a2ui-carcard__tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--muted, #98a1ab);
+}
+
+/* Stats, not a progress bar. */
+.a2ui-host .a2ui-matchscore__bar {
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.a2ui-host .a2ui-matchscore__fill {
+  background: linear-gradient(90deg, rgba(200, 255, 61, 0.55), var(--accent, #c8ff3d));
+  border-radius: 99px;
+  box-shadow: 0 0 10px rgba(200, 255, 61, 0.4);
+}
+.a2ui-host .a2ui-matchscore__value {
+  color: var(--accent, #c8ff3d);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.a2ui-host .a2ui-matchscore__label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint, #626b75);
+}
+
+.a2ui-host .a2ui-pricebadge__amount {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text, #f2f4f7);
+}
+.a2ui-host .a2ui-pricebadge__period {
+  color: var(--faint, #626b75);
+  font-size: 11.5px;
+}
+
+/* Stock catalog controls — the library ships broken CSS modules, so the
+   interview's chips, buttons and slider are styled here from the raw elements. */
+.a2ui-host button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text, #f2f4f7);
+  padding: 8px 14px;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.08s ease;
+}
+.a2ui-host button:hover { border-color: rgba(255, 255, 255, 0.24); background: rgba(255, 255, 255, 0.08); }
+.a2ui-host button:active { transform: scale(0.98); }
+.a2ui-host button[aria-pressed='true'],
+.a2ui-host input[type='checkbox']:checked + span {
+  background: var(--accent, #c8ff3d);
+  border-color: var(--accent, #c8ff3d);
+  color: var(--accent-ink, #16200a);
+  font-weight: 500;
+}
+
+.a2ui-host input[type='range'] { accent-color: var(--accent, #c8ff3d); width: 100%; }
+.a2ui-host input[type='text'],
+.a2ui-host input[type='date'],
+.a2ui-host input[type='number'] {
+  width: 100%;
+  height: 36px;
+  padding: 0 11px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text, #f2f4f7);
+  font: inherit;
+  outline: none;
+}
+.a2ui-host input:focus {
+  border-color: var(--accent, #c8ff3d);
+  box-shadow: 0 0 0 3px rgba(200, 255, 61, 0.14);
+}
+
+/* Rationale line under each car — the reason it placed where it did. */
+.a2ui-host .a2ui-step { display: flex; gap: 9px; align-items: flex-start; }
+.a2ui-host .a2ui-step__dot {
+  flex: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 9px; font-weight: 700;
+  background: rgba(200, 255, 61, 0.16);
+  color: var(--accent, #c8ff3d);
+  border: 1px solid rgba(200, 255, 61, 0.4);
+  margin-top: 2px;
+}
+.a2ui-host .a2ui-step--done .a2ui-step__dot {
+  background: var(--accent, #c8ff3d);
+  color: var(--accent-ink, #16200a);
+  border-color: var(--accent, #c8ff3d);
+}
+.a2ui-host .a2ui-step__title { font-size: 12.5px; line-height: 1.5; color: var(--muted, #98a1ab); }
+.a2ui-host .a2ui-step__detail { display: block; font-size: 11.5px; color: var(--faint, #626b75); margin-top: 2px; }
