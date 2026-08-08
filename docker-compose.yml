@@ -1,0 +1,60 @@
+# Everything needed to run the app: `docker compose up`, then open :5173.
+#
+# Three services because that is the architecture — the browser talks only to
+# the web tier, the API owns the agent loop and session state, and the MCP
+# marketplace is an independently addressable MCP server that can be inspected
+# on its own with MCP Inspector.
+
+services:
+  mcp-marketplace:
+    build:
+      context: .
+      target: mcp-marketplace
+    environment:
+      MCP_PORT: 8081
+    # Exposed so the marketplace can be pointed at from MCP Inspector during a
+    # demo, proving the tools and ui:// resources are real.
+    ports:
+      - '8081:8081'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8081/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      API_PORT: 8080
+      MCP_URL: http://mcp-marketplace:8081/mcp
+      # Set AGENT_API_KEY to run the real agent; without one the scripted
+      # driver serves a complete, deterministic journey.
+      AGENT_PROVIDER: ${AGENT_PROVIDER:-}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_MODEL: ${AGENT_MODEL:-}
+    ports:
+      - '8080:8080'
+    depends_on:
+      mcp-marketplace:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/api/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      target: web
+    # 5173 on the host to match the dev-server port, so the same URL works
+    # whether you are running compose or `npm run dev`.
+    ports:
+      - '5173:80'
+    depends_on:
+      api:
+        condition: service_healthy
