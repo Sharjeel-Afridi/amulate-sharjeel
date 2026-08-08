@@ -46,6 +46,12 @@ export class ScriptedDriver implements AgentDriver {
   async handleUserMessage(ctx: TurnContext, text: string): Promise<void> {
     const { interview } = ctx.state
 
+    // "Book the Volvo" is an instruction, not another interview answer.
+    if (isBookingIntent(text) && ctx.state.shortlist.length > 0) {
+      const listing = this.findListingInShortlist(ctx, text) ?? ctx.state.shortlist[0]!.listing
+      return this.startBooking(ctx, listing.id)
+    }
+
     // Free text always wins over the controls — someone who types "make it 500"
     // should not have to go back and drag a slider.
     const patch = extractPreferences(text, ctx.state.preferences)

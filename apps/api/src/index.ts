@@ -5,7 +5,9 @@ import type { A2uiMessage } from './a2ui.js'
 import type { TurnContext } from './driver.js'
 import { type ServerEvent, sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
-import { ScriptedDriver, isBookingIntent } from './scripted-driver.js'
+import { LlmAgentDriver, readAgentConfig } from './agent-driver.js'
+import type { AgentDriver } from './driver.js'
+import { ScriptedDriver } from './scripted-driver.js'
 import { createSession, emit, getSession, subscribe, update } from './sessions.js'
 import {
   buildCatalogueSurface,
@@ -17,9 +19,40 @@ import { nextQuestion } from './interview.js'
 
 const PORT = Number(process.env.API_PORT ?? 8080)
 
-// One driver for now. When an API key is present this becomes a choice between
-// the scripted driver and the Claude Agent SDK one, behind the same interface.
-const driver = new ScriptedDriver()
+/**
+ * Which driver runs the conversation.
+ *
+ * `AGENT_MODE=scripted` forces the deterministic path even when a key is
+ * present — useful for a demo you need to be repeatable, or when a free-tier
+ * provider starts throttling mid-presentation. Otherwise a configured
+ * `AGENT_API_KEY` selects the model-backed driver, and its absence falls back
+ * rather than failing: an app that boots and works beats one that refuses to
+ * start because an optional key is missing.
+ */
+function selectDriver(): AgentDriver {
+  const forced = process.env.AGENT_MODE?.trim().toLowerCase()
+  if (forced === 'scripted') {
+    console.log('[api] AGENT_MODE=scripted — using the deterministic driver')
+    return new ScriptedDriver()
+  }
+
+  const cfg = readAgentConfig()
+  if (!cfg) {
+    console.log('[api] no AGENT_API_KEY — using the deterministic driver')
+    return new ScriptedDriver()
+  }
+
+  try {
+    const driver = new LlmAgentDriver(cfg)
+    console.log(`[api] agent mode: ${cfg.provider} / ${cfg.model}`)
+    return driver
+  } catch (err) {
+    console.error('[api] agent setup failed, falling back to scripted:', err)
+    return new ScriptedDriver()
+  }
+}
+
+const driver = selectDriver()
 
 const app = express()
 app.use(cors({ origin: true }))
@@ -148,13 +181,7 @@ app.post('/api/session/:id/message', async (req, res) => {
 
   const ctx = makeContext(state)
   try {
-    // "Book the Volvo" is a booking intent, not another interview answer.
-    if (isBookingIntent(text) && state.shortlist.length > 0) {
-      const listing = driver.findListingInShortlist(ctx, text) ?? state.shortlist[0]!.listing
-      await driver.startBooking(ctx, listing.id)
-    } else {
-      await driver.handleUserMessage(ctx, text)
-    }
+    await driver.handleUserMessage(ctx, text)
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',

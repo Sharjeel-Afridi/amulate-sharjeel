@@ -33,18 +33,35 @@ npm run dev
 That starts all three services: the MCP marketplace on `:8081`, the API on
 `:8080`, and the web app on `:5173`.
 
-### With a live model
+### Scripted mode and agent mode
 
-The agent layer is provider-agnostic. Drop a key in `.env`:
+The app runs either way, and the switch is one environment variable.
+
+| `.env` | Driver |
+|---|---|
+| *(nothing set)* | **Scripted** — deterministic, no model, no key, no network |
+| `AGENT_API_KEY=…` | **Agent** — the model chooses questions and tools |
+| `AGENT_API_KEY=…` + `AGENT_MODE=scripted` | **Scripted**, forced |
 
 ```bash
-AGENT_PROVIDER=gemini     # gemini | groq | openai | anthropic
+AGENT_PROVIDER=gemini              # gemini | groq | openai
 AGENT_API_KEY=...
-AGENT_MODEL=gemini-2.5-flash
+AGENT_MODEL=gemini-2.5-flash       # groq: llama-3.3-70b-versatile
 ```
 
-Without one, the scripted driver serves a complete, deterministic run — which
-also makes it a dependable demo fallback if a live API is throttled.
+Provider-agnostic: the harness is the **OpenAI Agents SDK**, which talks to any
+OpenAI-compatible endpoint, so Gemini and Groq free tiers work by changing a
+base URL. Set `AGENT_BASE_URL` for anything else.
+
+Both drivers implement the same `AgentDriver` interface, call the same MCP
+tools, mutate the same session state and emit the same A2UI surfaces — only the
+choice of what to say next differs. A missing key **falls back rather than
+failing**: an app that boots and works beats one that refuses to start over an
+optional key.
+
+Scripted mode is not only a stand-in. It is the demo fallback — if a free-tier
+provider throttles mid-presentation, `AGENT_MODE=scripted` gives an instant,
+complete, repeatable run.
 
 ---
 

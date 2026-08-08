@@ -13,8 +13,11 @@
     "@car/ranking": "*",
     "@car/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openai/agents": "^0.14.3",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "openai": "^6.49.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
