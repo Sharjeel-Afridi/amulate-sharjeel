@@ -193,6 +193,8 @@ el('submit').addEventListener('click', () => {
   const { extras, total } = compute();
   el('submit').disabled = true;
   el('submit').textContent = 'Submitting…';
+  el('err').textContent = '';
+
   callTool('submit_booking', {
     listingId: LISTING_ID,
     fullName: name,
@@ -201,6 +203,13 @@ el('submit').addEventListener('click', () => {
     endDate: RENTAL ? el('end').value : undefined,
     extras: extras.map((e) => e.id),
     expectedTotal: total,
+  }).catch(function (err) {
+    // The host owns what happens next on success; we only handle the failure
+    // path, so a dropped call doesn't leave the button stuck on "Submitting…".
+    el('err').textContent = (err && err.message) || 'Could not submit — please try again.';
+    el('submit').disabled = false;
+    el('submit').textContent = 'Continue to payment';
+    reportSize();
   });
 });
 `

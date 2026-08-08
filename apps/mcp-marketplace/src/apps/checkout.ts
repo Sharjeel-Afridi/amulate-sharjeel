@@ -82,6 +82,7 @@ export function checkoutHtml(booking: Booking, listing: Listing): string {
     </div>
   </div>
 
+  <div class="err" id="pay-error"></div>
   <button class="primary" id="pay">Pay ${money(booking.total)} (simulated)</button>
   <div class="tiny muted" style="text-align:center">This button settles a fake transaction only.</div>
 </div>
@@ -102,13 +103,25 @@ const pay = document.getElementById('pay');
 pay.addEventListener('click', () => {
   pay.disabled = true;
   pay.textContent = 'Processing…';
-  // A short delay so the simulated settle reads as a real step rather than a jump.
-  setTimeout(() => {
-    document.getElementById('pay-card').style.display = 'none';
-    document.getElementById('done').style.display = 'block';
-    reportSize();
-    callTool('confirm_payment', { bookingId: BOOKING_ID });
-  }, 900);
+
+  // A short delay so the simulated settle reads as a step rather than a jump —
+  // but the confirmation screen is gated on the server actually confirming,
+  // never on the timer alone.
+  var settled = new Promise(function (r) { setTimeout(r, 900); });
+
+  Promise.all([settled, callTool('confirm_payment', { bookingId: BOOKING_ID })])
+    .then(function () {
+      document.getElementById('pay-card').style.display = 'none';
+      document.getElementById('done').style.display = 'block';
+      reportSize();
+    })
+    .catch(function (err) {
+      pay.disabled = false;
+      pay.textContent = 'Retry payment (simulated)';
+      var note = document.getElementById('pay-error');
+      note.textContent = (err && err.message) || 'Could not confirm — please try again.';
+      reportSize();
+    });
 });
 `
 

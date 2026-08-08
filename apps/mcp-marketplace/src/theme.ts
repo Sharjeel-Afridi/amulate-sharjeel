@@ -145,23 +145,87 @@ export function esc(s: unknown): string {
 }
 
 /**
- * The bridge back to the host. We speak mcp-ui's postMessage dialect because our
- * host renders these with @mcp-ui/client; the host resolves the promise by
- * posting back a matching messageId.
+ * The guest half of the MCP Apps bridge — JSON-RPC 2.0 over postMessage, per
+ * SEP-1865. Method names, protocol version and payload shapes match
+ * `@modelcontextprotocol/ext-apps`; see `packages/shared/src/mcp-app-protocol.ts`
+ * for the contract and the reasoning behind implementing it directly.
+ *
+ * Exposes two globals to widget code:
+ *   callTool(name, args) -> Promise<CallToolResult>
+ *   reportSize()         -> push the current height to the host
  */
 export const BRIDGE_JS = `
-function callTool(toolName, params) {
-  const messageId = 'm' + Math.random().toString(36).slice(2);
-  window.parent.postMessage({ type: 'tool', messageId, payload: { toolName, params } }, '*');
-  return messageId;
-}
-function notifyHost(message) {
-  window.parent.postMessage({ type: 'notify', payload: { message } }, '*');
-}
-function reportSize() {
-  const h = document.documentElement.scrollHeight;
-  window.parent.postMessage({ type: 'ui-size-change', payload: { height: h } }, '*');
-}
-new ResizeObserver(reportSize).observe(document.documentElement);
-window.addEventListener('load', reportSize);
+(function () {
+  var PROTOCOL_VERSION = '${'2026-01-26'}';
+  var nextId = 1;
+  var pending = new Map();
+  var lastHeight = 0;
+
+  function post(msg) { window.parent.postMessage(msg, '*'); }
+
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending.set(id, { resolve: resolve, reject: reject });
+      post({ jsonrpc: '2.0', id: id, method: method, params: params });
+    });
+  }
+
+  function notify(method, params) {
+    post({ jsonrpc: '2.0', method: method, params: params });
+  }
+
+  function reportSize() {
+    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (h === lastHeight) return;
+    lastHeight = h;
+    notify('ui/notifications/size-changed', { height: h });
+  }
+
+  // The host may hand us its theme tokens; mirror them so the widget tracks the
+  // host's appearance instead of hard-coding one.
+  function applyHostContext(ctx) {
+    if (!ctx || !ctx.styles) return;
+    var root = document.documentElement;
+    Object.keys(ctx.styles).forEach(function (k) {
+      root.style.setProperty(k.startsWith('--') ? k : '--' + k, ctx.styles[k]);
+    });
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+
+    if (msg.method === undefined && msg.id !== undefined) {
+      var p = pending.get(msg.id);
+      if (!p) return;
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'host error'));
+      else p.resolve(msg.result);
+      return;
+    }
+
+    if (msg.method === 'ui/notifications/host-context-changed') {
+      applyHostContext(msg.params && msg.params.hostContext);
+    }
+  });
+
+  window.callTool = function (name, args) {
+    return request('tools/call', { name: name, arguments: args });
+  };
+  window.reportSize = reportSize;
+
+  // The guest opens the handshake. If the host never answers we still render —
+  // a widget that silently stays blank is worse than one that works uncoupled.
+  request('ui/initialize', { protocolVersion: PROTOCOL_VERSION, appCapabilities: {} })
+    .then(function (result) {
+      notify('ui/notifications/initialized');
+      if (result && result.hostContext) applyHostContext(result.hostContext);
+      reportSize();
+    })
+    .catch(function () { reportSize(); });
+
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+  window.addEventListener('load', reportSize);
+})();
 `
