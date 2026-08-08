@@ -50,6 +50,11 @@ function summarize(l: Listing) {
         provider: l.provider,
         freeKmPerDay: l.freeKmPerDay,
         instantBook: l.instantBook,
+        // Both are scored by the ranking engine. Dropping them to save tokens
+        // produced NaN scores that JSON then serialised as null — cheap fields,
+        // expensive omission.
+        minRentalDays: l.minRentalDays,
+        excess: l.excess,
       }
     : {
         ...common,

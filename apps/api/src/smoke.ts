@@ -111,6 +111,16 @@ if (!has('results')) failures.push('no ranked results emitted')
 if (!has('mcpApp')) failures.push('booking MCP App was never rendered')
 if (!results?.shortlist.length) failures.push('shortlist was empty')
 
+// NaN serialises to null over JSON, so an un-asserted score hides a broken
+// scorer behind a passing test. Check the values, not just the shape.
+for (const r of results?.shortlist ?? []) {
+  if (typeof r.score !== 'number' || !Number.isFinite(r.score)) {
+    failures.push(`${r.listing.brand} ${r.listing.model} has a non-numeric score (${r.score})`)
+  }
+  if (typeof r.rank !== 'number') failures.push('a result is missing its rank')
+  if (!r.factors?.length) failures.push(`${r.listing.brand} has no score factors to explain its rank`)
+}
+
 const rationales = results?.shortlist.map((r) => r.rationale) ?? []
 if (rationales.some((r) => !r || r.length < 10)) failures.push('a rationale was empty or trivial')
 if (rationales.some((r) => /great choice|perfect for you|excellent option/i.test(r))) {

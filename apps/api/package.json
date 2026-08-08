@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@car/catalog": "*",
+    "@car/ranking": "*",
     "@car/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "cors": "^2.8.5",
