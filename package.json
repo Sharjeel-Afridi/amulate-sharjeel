@@ -1,0 +1,27 @@
+{
+  "name": "amulate-sharjeel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Car Matchmaker — a multistep agent for renting and buying cars",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n mcp,api,web -c magenta,cyan,green \"npm:dev:mcp\" \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:mcp": "npm run dev -w @car/mcp-marketplace",
+    "dev:api": "npm run dev -w @car/api",
+    "dev:web": "npm run dev -w @car/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}
