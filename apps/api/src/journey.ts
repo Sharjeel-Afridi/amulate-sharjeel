@@ -1,4 +1,11 @@
-import { type Criterion, type Listing, missingFields, screen } from '@car/shared'
+import {
+  type Criterion,
+  type Listing,
+  type Preferences,
+  type RankedListing,
+  missingFields,
+  screen,
+} from '@car/shared'
 import {
   buildCatalogueSurface,
   buildJourneySurface,
@@ -108,16 +115,45 @@ export interface ResearchSummary {
   top: { listingId: string; name: string; score: number; rationale: string }[]
 }
 
+/** The outcome of ordering the qualifying cars. */
+export interface RankingResult {
+  shortlist: RankedListing[]
+  /** A line to say out loud, when whatever ranked them also wrote one. */
+  summary?: string
+  /** Which one did it — surfaced as a reasoning step so the user can see. */
+  rankedBy: 'model' | 'scorer'
+}
+
+/**
+ * Orders the cars that qualified, and says why each is where it is.
+ *
+ * Injected rather than fixed so the journey stays driver-agnostic: the scripted
+ * driver has no model and uses the scorer, the model-backed one hands the spec
+ * and the candidates to a ranking agent. Both return the same shape, so
+ * everything downstream — the surface, the state, the shortlist — is identical.
+ */
+export type Ranker = (
+  candidates: Listing[],
+  prefs: Preferences,
+  criteria: Criterion[],
+) => Promise<RankingResult>
+
+/** Pure arithmetic over the stated preferences. No model, no network. */
+export const scorerRanker: Ranker = async (candidates, prefs) => ({
+  shortlist: rank(candidates, prefs).slice(0, 8),
+  rankedBy: 'scorer',
+})
+
 /**
  * Search, screen, rank and render.
  *
- * `narrate` is off when a model asked for this, because the model writes the
- * reply itself from the returned summary — two voices describing the same
- * results reads as a bug.
+ * `narrate` is off when the conversational model asked for this, because it
+ * writes the reply itself from the returned summary — the same results described
+ * twice in two voices reads as a bug.
  */
 export async function runResearch(
   ctx: TurnContext,
-  { narrate = true }: { narrate?: boolean } = {},
+  { narrate = true, ranker = scorerRanker }: { narrate?: boolean; ranker?: Ranker } = {},
 ): Promise<ResearchSummary> {
   const prefs = ctx.state.preferences
   ctx.setPhase('research')
@@ -169,10 +205,20 @@ export async function runResearch(
     return { qualified: 0, ruledOut: ruledOut.length, bindingConstraint: binding, top: [] }
   }
 
-  const shortlist = rank(qualified.map((a) => a.listing), prefs).slice(0, 8)
+  const { shortlist, summary, rankedBy } = await ranker(
+    qualified.map((a) => a.listing),
+    prefs,
+    ctx.state.criteria,
+  )
+
   ctx.setShortlist(shortlist)
   ctx.setPhase('recommend')
-  ctx.step('Ranked the qualifying cars on your stated priorities')
+  ctx.step(
+    rankedBy === 'model'
+      ? 'Ranked by the agent against your spec'
+      : 'Ranked the qualifying cars on your stated priorities',
+    rankedBy === 'model' ? `${shortlist.length} cars, each scored and explained` : undefined,
+  )
   ctx.a2ui(buildCatalogueSurface(shortlist))
 
   const top = shortlist[0]
@@ -180,9 +226,16 @@ export async function runResearch(
     const excluded = ruledOut.length
       ? ` I set aside ${ruledOut.length} that tripped a dealbreaker — ask if you want to see them.`
       : ''
+    // The counts are always ours. A model asked to open with "five cars
+    // qualified" will sooner or later say three, and a wrong number in the first
+    // sentence discredits the correct reasoning after it. It supplies the
+    // judgement; the arithmetic stays here.
+    const lead = `${shortlist.length} cars clear every condition.${excluded}`
     ctx.say(
-      `${shortlist.length} cars clear every condition.${excluded} Best fit is the ${top?.listing.brand} ` +
-        `${top?.listing.model} — ${top?.rationale} Tap a card, or say "book the ${top?.listing.brand}".`,
+      summary
+        ? `${lead} ${summary}`
+        : `${lead} Best fit is the ${top?.listing.brand} ${top?.listing.model} — ${top?.rationale} ` +
+            `Tap a card, or say "book the ${top?.listing.brand}".`,
     )
   }
 

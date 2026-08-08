@@ -7,6 +7,7 @@ import { buildJourneySurface } from './surfaces.js'
 import { dealbreakerCriteria } from './interview.js'
 import type { AgentDriver, TurnContext } from './driver.js'
 import {
+  type Ranker,
   advance,
   handleBookingSubmitted,
   handlePaymentConfirmed,
@@ -15,6 +16,8 @@ import {
   showSpec,
   startBooking,
 } from './journey.js'
+import { withRateLimitRetry, withTimeout } from './llm.js'
+import { createModelRanker } from './rank-agent.js'
 
 /**
  * The model-backed driver.
@@ -75,30 +78,6 @@ const TURN_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 45_000)
 const NO_ARGS = z.object({
   note: z.string().nullable().describe('Unused. Pass null.'),
 })
-
-const isRateLimit = (err: unknown): boolean =>
-  /\b429\b|rate.?limit|RESOURCE_EXHAUSTED|quota/i.test(err instanceof Error ? err.message : String(err))
-
-/**
- * Free tiers throttle aggressively, and a single agent turn makes several model
- * calls while working through tools. Without a retry a burst of typing produces
- * a dead chat; with one it just runs slightly slower.
- */
-async function withRateLimitRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  let lastError: unknown
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err
-      if (!isRateLimit(err) || i === attempts - 1) throw err
-      const backoff = 2000 * 2 ** i
-      console.warn(`[agent] rate limited, retrying in ${backoff}ms (${i + 1}/${attempts - 1})`)
-      await new Promise((r) => setTimeout(r, backoff))
-    }
-  }
-  throw lastError
-}
 
 export interface AgentConfig {
   provider: string
@@ -190,7 +169,7 @@ A turn that ends without text is a failure — the user sees nothing.
  * push a different question mid-flow only lets the two disagree about where the
  * conversation is.
  */
-function buildTools(ctx: TurnContext) {
+function buildTools(ctx: TurnContext, ranker: Ranker) {
   const recordPreferences = tool({
     name: 'record_preferences',
     description:
@@ -290,7 +269,7 @@ function buildTools(ctx: TurnContext) {
     execute: async () => {
       // `narrate: false` — the reply is this turn's job, and the same results
       // described twice in two voices reads as a bug.
-      const summary = await runResearch(ctx, { narrate: false })
+      const summary = await runResearch(ctx, { narrate: false, ranker })
       return JSON.stringify(summary)
     },
   })
@@ -311,12 +290,14 @@ function buildTools(ctx: TurnContext) {
 export class LlmAgentDriver implements AgentDriver {
   readonly name: string
   private readonly cfg: AgentConfig
+  private readonly ranker: Ranker
   private mcpServer?: MCPServerStreamableHttp
 
   constructor(cfg: AgentConfig) {
     this.cfg = cfg
     this.name = `${cfg.provider}:${cfg.model}`
     configureProvider(cfg)
+    this.ranker = createModelRanker(cfg.model)
   }
 
   /**
@@ -347,7 +328,7 @@ export class LlmAgentDriver implements AgentDriver {
       name: 'Car Matchmaker',
       instructions: `${SYSTEM_PROMPT}\n\n## Current state\n${summarise(ctx)}`,
       model: this.cfg.model,
-      tools: buildTools(ctx),
+      tools: buildTools(ctx, this.ranker),
       mcpServers: mcpServers ? [mcpServers] : [],
     })
   }
@@ -356,23 +337,14 @@ export class LlmAgentDriver implements AgentDriver {
     const started = Date.now()
     try {
       const agent = await this.agentFor(ctx)
-      const result = await Promise.race([
+      const result = await withTimeout(
         // A generous ceiling: the loop should end in two or three tool calls, so
         // hitting this means the model is stuck, and the error says so plainly.
-        withRateLimitRetry(() => run(agent, text, { maxTurns: 12 })),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `No response after ${TURN_TIMEOUT_MS / 1000}s — the provider is probably rate-limiting. ` +
-                    'Set AGENT_MODE=scripted to fall back.',
-                ),
-              ),
-            TURN_TIMEOUT_MS,
-          ),
-        ),
-      ])
+        () => withRateLimitRetry(() => run(agent, text, { maxTurns: 12 })),
+        TURN_TIMEOUT_MS,
+        `No response after ${TURN_TIMEOUT_MS / 1000}s — the provider is probably rate-limiting. ` +
+          'Set AGENT_MODE=scripted to fall back.',
+      )
       const output = String(result.finalOutput ?? '').trim()
       console.log(`[agent] turn ok in ${Date.now() - started}ms, ${output.length} chars`)
       if (output) ctx.say(output)
@@ -406,8 +378,12 @@ export class LlmAgentDriver implements AgentDriver {
     }
 
     if (name === 'confirmSpec') {
+      // The one place a button does reach a model. Confirming the spec is what
+      // hands it to the ranking agent, which is the whole point of the product —
+      // the interview is a lookup, but ordering cars against what someone said
+      // is a judgement, and that is the agent's to make.
       ctx.patchInterview({ confirmed: true })
-      await runResearch(ctx)
+      await runResearch(ctx, { ranker: this.ranker })
       return
     }
 
