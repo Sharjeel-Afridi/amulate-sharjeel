@@ -80,13 +80,19 @@ type A2uiHostProps = Parameters<typeof A2uiHost>[0]
 function Conversation({
   items,
   busy,
+  a2ui,
   onSend,
+  onAction,
   onCallTool,
+  onError,
 }: {
   items: ChatItem[]
   busy: boolean
+  a2ui: A2uiHostProps['messages']
   onSend: (text: string) => void
+  onAction: (action: A2uiClientAction) => void
   onCallTool: (name: string, args: Record<string, unknown>) => Promise<unknown>
+  onError: (e: unknown) => void
 }) {
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement>(null)
@@ -139,6 +145,13 @@ function Conversation({
                 )
             }
           })}
+
+          {/* The interview's form half — the agent asks in prose above, the
+              control to answer it renders here, inline in the conversation. */}
+          <div className="interview">
+            <A2uiHost messages={a2ui} surfaceId="interview" onAction={onAction} onError={onError} />
+          </div>
+
           <div ref={endRef} />
         </div>
       </div>
@@ -192,7 +205,7 @@ function Stage({
 }
 
 export function App() {
-  const { state, items, a2ui, busy, send, callTool } = useSession()
+  const { state, items, a2ui, busy, send, sendAction, callTool } = useSession()
   const [renderErrors, setRenderErrors] = useState<string[]>([])
 
   const onError = (e: unknown) => {
@@ -203,19 +216,27 @@ export function App() {
     setRenderErrors((prev) => (prev.includes(message) ? prev : [...prev, message]))
   }
 
+  // Every A2UI action goes to the driver, which owns what each one means. The
+  // client deliberately does not interpret them — that logic belongs with the
+  // agent, not split across two codebases.
   const onAction = (action: A2uiClientAction) => {
-    if (action.name === 'selectCar') {
-      const title = String(action.context?.title ?? '')
-      send(`book ${title.replace(/^\d+\.\s*/, '')}`)
-    }
+    sendAction(action.name, (action.context ?? {}) as Record<string, unknown>)
   }
 
-  const hasResults = (state?.shortlist.length ?? 0) > 0 || busy
+  const hasResults = (state?.shortlist.length ?? 0) > 0
 
   return (
     <main className="cockpit">
       <JourneyRail phase={state?.phase ?? 'interview'} a2ui={a2ui} onError={onError} />
-      <Conversation items={items} busy={busy} onSend={send} onCallTool={callTool} />
+      <Conversation
+        items={items}
+        busy={busy}
+        a2ui={a2ui}
+        onSend={send}
+        onAction={onAction}
+        onCallTool={callTool}
+        onError={onError}
+      />
       <Stage a2ui={a2ui} hasResults={hasResults} onAction={onAction} onError={onError} />
       {renderErrors.length > 0 && (
         <div className="render-errors" role="alert">

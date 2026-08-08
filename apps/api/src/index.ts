@@ -7,7 +7,13 @@ import { type ServerEvent, sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
 import { ScriptedDriver, isBookingIntent } from './scripted-driver.js'
 import { createSession, emit, getSession, subscribe, update } from './sessions.js'
-import { buildCatalogueSurface, buildJourneySurface, initSurfaces } from './surfaces.js'
+import {
+  buildCatalogueSurface,
+  buildJourneySurface,
+  buildQuestionSurface,
+  initSurfaces,
+} from './surfaces.js'
+import { nextQuestion } from './interview.js'
 
 const PORT = Number(process.env.API_PORT ?? 8080)
 
@@ -55,6 +61,21 @@ function makeContext(state: SessionState): TurnContext {
         s.search = summary
       })
     },
+    patchInterview: (patch) => {
+      update(id, (s) => {
+        s.interview = { ...s.interview, ...patch }
+      })
+    },
+    setCriteria: (criteria) => {
+      update(id, (s) => {
+        s.criteria = criteria
+      })
+    },
+    setRuledOut: (ruledOut) => {
+      update(id, (s) => {
+        s.ruledOut = ruledOut
+      })
+    },
   }
 }
 
@@ -94,6 +115,19 @@ app.get('/api/session/:id/stream', (req, res) => {
   res.write(sseFrame({ type: 'a2ui', messages: buildJourneySurface(state) }))
 
   const unsubscribe = subscribe(req.params.id, (event) => res.write(sseFrame(event)))
+
+  // Open the interview as soon as someone is listening, rather than waiting for
+  // the user to guess that they should type something first.
+  if (state.interview.answered.length === 0 && !state.interview.pending) {
+    const first = nextQuestion(state.preferences, new Set())
+    if (first) {
+      update(req.params.id, (s) => {
+        s.interview.pending = first.id
+      })
+      res.write(sseFrame({ type: 'message', text: `Let's find you the right car. ${first.ask}` }))
+      res.write(sseFrame({ type: 'a2ui', messages: buildQuestionSurface(first) }))
+    }
+  }
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15_000)
 
   req.on('close', () => {
@@ -121,6 +155,30 @@ app.post('/api/session/:id/message', async (req, res) => {
     } else {
       await driver.handleUserMessage(ctx, text)
     }
+  } catch (err) {
+    emit(state.sessionId, {
+      type: 'error',
+      message: err instanceof Error ? err.message : 'Something went wrong',
+    })
+  }
+  emit(state.sessionId, { type: 'idle' })
+  return undefined
+})
+
+/** Actions fired by A2UI-rendered controls — the interview's hybrid half. */
+app.post('/api/session/:id/action', async (req, res) => {
+  const state = getSession(req.params.id)
+  if (!state) return res.status(404).json({ error: 'no such session' })
+
+  const name = String(req.body?.name ?? '')
+  const context = (req.body?.context ?? {}) as Record<string, unknown>
+  if (!name) return res.status(400).json({ error: 'action name required' })
+
+  res.json({ accepted: true })
+
+  const ctx = makeContext(state)
+  try {
+    await driver.handleUiAction(ctx, name, context)
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',

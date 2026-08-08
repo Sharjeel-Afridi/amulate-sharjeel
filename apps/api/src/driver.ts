@@ -1,4 +1,11 @@
-import type { Phase, Preferences, RankedListing, SessionState } from '@car/shared'
+import type {
+  Criterion,
+  ListingAssessment,
+  Phase,
+  Preferences,
+  RankedListing,
+  SessionState,
+} from '@car/shared'
 import type { A2uiMessage } from './a2ui.js'
 
 /**
@@ -19,6 +26,8 @@ export interface AgentDriver {
   handleUserMessage(ctx: TurnContext, text: string): Promise<void>
   /** Handle a tool call that originated inside an MCP App iframe. */
   handleAppToolResult(ctx: TurnContext, toolName: string, result: unknown): Promise<void>
+  /** Handle an action fired by an A2UI-rendered control. */
+  handleUiAction(ctx: TurnContext, name: string, context: Record<string, unknown>): Promise<void>
 }
 
 /** Everything a driver is allowed to do to the outside world. */
@@ -37,4 +46,7 @@ export interface TurnContext {
   patchPreferences(patch: Preferences): void
   setShortlist(shortlist: RankedListing[]): void
   setSearchSummary(summary: SessionState['search']): void
+  patchInterview(patch: Partial<SessionState['interview']>): void
+  setCriteria(criteria: Criterion[]): void
+  setRuledOut(ruledOut: ListingAssessment[]): void
 }

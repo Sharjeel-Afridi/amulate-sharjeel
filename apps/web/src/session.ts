@@ -114,6 +114,18 @@ export function useSession() {
     })
   }, [])
 
+  /** Forwards an action fired by an A2UI control — the interview's tap answers. */
+  const sendAction = useCallback((name: string, context: Record<string, unknown>) => {
+    const id = sessionRef.current
+    if (!id) return
+    setBusy(true)
+    void fetch(`/api/session/${id}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, context }),
+    })
+  }, [])
+
   /**
    * Forwards a tool call that originated inside an MCP App iframe. It goes to
    * the API rather than the MCP server so every tool call stays on one path and
@@ -133,5 +145,5 @@ export function useSession() {
     return body
   }, [])
 
-  return { sessionId, state, items, a2ui, busy, connected, send, callTool }
+  return { sessionId, state, items, a2ui, busy, connected, send, sendAction, callTool }
 }

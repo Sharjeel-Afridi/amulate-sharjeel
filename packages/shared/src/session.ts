@@ -1,3 +1,4 @@
+import type { Criterion, ListingAssessment } from './criteria.js'
 import type { Category, FuelType, Mode, RankedListing, Transmission } from './domain.js'
 
 /** The agent's journey. Transitions are explicit, so the UI can render them. */
@@ -44,8 +45,27 @@ export interface SearchSummary {
   totalScanned: number
   matched: number
   shortlisted: number
+  /** Ruled out by a hard criterion, shown separately with the reason. */
+  ruledOut: number
   /** Filters that were relaxed to get usable results, for honest reporting. */
   relaxed: string[]
+}
+
+/**
+ * Interview progress.
+ *
+ * `complete` and `confirmed` are separate on purpose: finishing the questions is
+ * not permission to go searching. The user sees the assembled spec and approves
+ * it first, which is their chance to correct a misheard answer before any work
+ * happens.
+ */
+export interface InterviewState {
+  /** Question ids already answered, in order. */
+  answered: string[]
+  /** The question currently on screen, if any. */
+  pending?: string
+  complete: boolean
+  confirmed: boolean
 }
 
 export interface Booking {
@@ -67,9 +87,14 @@ export interface Booking {
 export interface SessionState {
   sessionId: string
   phase: Phase
+  interview: InterviewState
   preferences: Preferences
+  /** The spec: what the interview answers became. */
+  criteria: Criterion[]
   search?: SearchSummary
   shortlist: RankedListing[]
+  /** Cars a hard criterion removed, kept so the user can see what and why. */
+  ruledOut: ListingAssessment[]
   comparing: string[]
   booking?: Booking
   createdAt: string
@@ -81,8 +106,11 @@ export function createSessionState(sessionId: string): SessionState {
   return {
     sessionId,
     phase: 'interview',
+    interview: { answered: [], complete: false, confirmed: false },
     preferences: {},
+    criteria: [],
     shortlist: [],
+    ruledOut: [],
     comparing: [],
     createdAt: now,
     updatedAt: now,

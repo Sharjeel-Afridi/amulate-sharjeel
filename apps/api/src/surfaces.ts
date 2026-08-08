@@ -1,6 +1,7 @@
 import { carArtDataUri } from '@car/catalog'
 import { type RankedListing, type SessionState, isRental } from '@car/shared'
 import {
+  type A2uiComponent,
   type A2uiMessage,
   BASIC_CATALOG,
   CAR_CATALOG,
@@ -12,6 +13,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
+import type { Question } from './interview.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -36,6 +38,7 @@ export function initSurfaces(): A2uiMessage[] {
     createSurface(SURFACES.journey, BASIC_CATALOG),
     // The stage uses our merged catalog so CarCard and friends resolve.
     createSurface(SURFACES.stage, CAR_CATALOG),
+    createSurface(SURFACES.interview, BASIC_CATALOG),
   ]
 }
 
@@ -153,18 +156,119 @@ export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[]
   ]
 }
 
-/** Inline interview controls, rendered into the chat stream. */
-export function buildInterviewControls(
-  question: string,
-  controlId: string,
-  control: ReturnType<typeof row>,
-): A2uiMessage[] {
+/**
+ * The interview question, rendered as an inline control in the chat.
+ *
+ * This is the hybrid: the agent asks conversationally, but the answer is one tap
+ * on the right kind of control rather than a sentence the user has to compose.
+ * Free text stays available in the composer throughout and overrides whatever
+ * the control holds.
+ */
+export function buildQuestionSurface(q: Question): A2uiMessage[] {
+  const control: A2uiComponent = (() => {
+    switch (q.control) {
+      case 'chips':
+        return {
+          id: 'control',
+          component: 'ChoicePicker',
+          label: '',
+          options: q.options ?? [],
+          value: { path: '/answer' },
+          variant: 'mutuallyExclusive',
+          displayStyle: 'chips',
+        }
+      case 'multi':
+        return {
+          id: 'control',
+          component: 'ChoicePicker',
+          label: '',
+          options: q.options ?? [],
+          value: { path: '/answer' },
+          variant: 'multipleSelection',
+          displayStyle: 'chips',
+        }
+      case 'slider':
+        return {
+          id: 'control',
+          component: 'Slider',
+          label: q.unit ?? '',
+          min: q.min ?? 0,
+          max: q.max ?? 100,
+          value: { path: '/number' },
+        }
+      case 'date':
+        return {
+          id: 'control',
+          component: 'DateTimeInput',
+          label: '',
+          value: { path: '/date' },
+          enableDate: true,
+          enableTime: false,
+        }
+      case 'text':
+        return {
+          id: 'control',
+          component: 'TextField',
+          label: '',
+          value: { path: '/text' },
+          variant: 'shortText',
+        }
+    }
+  })()
+
+  // Which data-model path the answer lands in depends on the control, so the
+  // submit action reads the matching one rather than a single shared field.
+  const answerPath =
+    q.control === 'slider' ? '/number' : q.control === 'date' ? '/date' : q.control === 'text' ? '/text' : '/answer'
+
   return [
-    createSurface(SURFACES.interview),
+    updateDataModel(SURFACES.interview, '/', {
+      question: q.ask,
+      answer: [],
+      number: q.min ?? 0,
+      date: '',
+      text: '',
+    }),
     updateComponents(SURFACES.interview, [
-      column('root', ['q', controlId]),
-      text('q', question),
+      // No question text here — the agent already asked it in the chat above.
+      // Repeating it inside the control reads as a form, which is the opposite
+      // of what this is meant to feel like.
+      column('root', ['control', 'submit']),
       control,
+      {
+        id: 'submit',
+        component: 'Button',
+        child: 'submitLabel',
+        variant: 'primary',
+        action: {
+          event: {
+            name: 'answerQuestion',
+            context: { questionId: q.id, value: { path: answerPath } },
+          },
+        },
+      },
+      text('submitLabel', q.optional ? 'Continue (or skip)' : 'Continue'),
+    ]),
+  ]
+}
+
+/** The assembled spec, shown for approval before any searching happens. */
+export function buildSpecSurface(lines: string[]): A2uiMessage[] {
+  return [
+    updateDataModel(SURFACES.interview, '/', { lines }),
+    updateComponents(SURFACES.interview, [
+      column('root', ['title', 'list', 'confirm']),
+      text('title', "Here's what I'll search on", 'h5'),
+      { id: 'list', component: 'Column', children: { componentId: 'line', path: '/lines' } },
+      { id: 'line', component: 'Text', text: { path: '' }, variant: 'caption' },
+      {
+        id: 'confirm',
+        component: 'Button',
+        child: 'confirmLabel',
+        variant: 'primary',
+        action: { event: { name: 'confirmSpec', context: {} } },
+      },
+      text('confirmLabel', 'Search on this'),
     ]),
   ]
 }

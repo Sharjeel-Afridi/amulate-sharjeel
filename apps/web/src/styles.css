@@ -289,3 +289,12 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* The interview's control half, inline in the conversation. */
+.interview:empty { display: none; }
+.interview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 13px 14px;
+}
