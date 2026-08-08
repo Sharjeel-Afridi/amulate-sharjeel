@@ -1,6 +1,6 @@
 import { Agent, MCPServerStreamableHttp, run, setTracingDisabled, tool } from '@openai/agents'
 import { setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents-openai'
-import { type Criterion, screen } from '@car/shared'
+import { CATEGORIES, type Criterion, screen } from '@car/shared'
 import OpenAI from 'openai'
 import { z } from 'zod'
 import {
@@ -51,6 +51,18 @@ const DEFAULT_MODELS: Record<string, string> = {
 
 /** A turn that has not resolved by now is throttled or wedged; say so. */
 const TURN_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 45_000)
+
+/**
+ * A stand-in parameter for tools that genuinely take no arguments.
+ *
+ * `z.object({})` serialises to a schema carrying `required` with no
+ * `properties`, which some providers reject outright ("'required' present but
+ * 'properties' is missing"). One ignored optional field keeps the schema valid
+ * everywhere without giving the model anything to get wrong.
+ */
+const NO_ARGS = z.object({
+  note: z.string().nullable().describe('Unused. Pass null.'),
+})
 
 const isRateLimit = (err: unknown): boolean =>
   /\b429\b|rate.?limit|RESOURCE_EXHAUSTED|quota/i.test(err instanceof Error ? err.message : String(err))
@@ -138,8 +150,9 @@ MUST finish by writing a short reply. The reply is what the user reads.
 
 - After calling ask_question, your reply IS that question, phrased naturally.
   Do NOT call ask_question again in the same turn.
-- Call record_preferences at most once per turn.
-- Never call the same tool twice in one turn.
+- record_preferences saves ONE fact per call. If the user told you three things,
+  call it three times, then reply.
+- Never call ask_question twice in one turn.
 - If you have already called a tool and know what to say, say it. Do not keep
   calling tools looking for more to do.
 
@@ -176,30 +189,59 @@ function buildTools(ctx: TurnContext) {
   const recordPreferences = tool({
     name: 'record_preferences',
     description:
-      'Save what the user told you. Only include fields they actually stated. ' +
-      'Budget is monthly for rentals and total for purchases.',
+      'Save ONE thing the user told you. Call once per fact. ' +
+      'field is one of: mode (rent|buy), useCase (free text), category, ' +
+      'budgetMax (number, monthly for rent / total for buy), targetDate (2026-09-12), ' +
+      'returnDate, seatsMin (number), bootLitresMin (number), ' +
+      'fuel (petrol|diesel|hybrid|electric), transmission (manual|automatic), ' +
+      'maxMileageKm (number). value is always a string.',
+    /*
+     * Two always-present string parameters, one fact per call.
+     *
+     * A single eleven-field object is the obvious shape, but tool calls are
+     * validated strictly: every property in the schema must be present, and a
+     * smaller model reliably omits the ones it has no value for — which rejects
+     * the entire call and loses the fields it *did* get right. Narrowing to two
+     * required strings makes a malformed call almost impossible.
+     */
     parameters: z.object({
-      mode: z.enum(['rent', 'buy']).nullable(),
-      useCase: z.string().nullable(),
-      category: z.string().nullable(),
-      budgetMax: z.number().nullable(),
-      targetDate: z.string().nullable(),
-      returnDate: z.string().nullable(),
-      seatsMin: z.number().nullable(),
-      bootLitresMin: z.number().nullable(),
-      fuel: z.enum(['petrol', 'diesel', 'hybrid', 'electric']).nullable(),
-      transmission: z.enum(['manual', 'automatic']).nullable(),
-      maxMileageKm: z.number().nullable(),
+      field: z.string(),
+      value: z.string(),
     }),
-    execute: async (patch) => {
-      const clean = Object.fromEntries(
-        Object.entries(patch).filter(([, v]) => v !== null && v !== undefined),
-      )
-      if (Object.keys(clean).length === 0) return 'Nothing to record.'
-      ctx.patchPreferences(clean as never)
-      ctx.step(`Noted ${Object.keys(clean).join(', ')}`)
+    execute: async ({ field, value }) => {
+      const ALLOWED: Record<string, readonly string[]> = {
+        mode: ['rent', 'buy'],
+        fuel: ['petrol', 'diesel', 'hybrid', 'electric'],
+        transmission: ['manual', 'automatic'],
+        category: CATEGORIES as readonly string[],
+      }
+      const NUMERIC = new Set(['budgetMax', 'seatsMin', 'bootLitresMin', 'maxMileageKm'])
+      const KNOWN = new Set([
+        'mode', 'useCase', 'category', 'budgetMax', 'targetDate', 'returnDate',
+        'seatsMin', 'bootLitresMin', 'fuel', 'transmission', 'maxMileageKm',
+      ])
+
+      const key = field.trim()
+      if (!KNOWN.has(key)) return `"${key}" is not a field I track. Ignored.`
+      if (!value?.trim()) return `No value given for ${key}. Ignored.`
+
+      let parsed: unknown = value.trim()
+      if (NUMERIC.has(key)) {
+        const n = Number(String(value).replace(/[^\d.]/g, ''))
+        if (!Number.isFinite(n) || n <= 0) return `"${value}" is not a usable number for ${key}.`
+        parsed = n
+      } else if (ALLOWED[key]) {
+        const lower = String(value).trim().toLowerCase()
+        if (!ALLOWED[key]!.includes(lower)) {
+          return `"${value}" is not valid for ${key}. Allowed: ${ALLOWED[key]!.join(', ')}.`
+        }
+        parsed = lower
+      }
+
+      ctx.patchPreferences({ [key]: parsed } as never)
+      ctx.step(`Noted ${key}`, String(parsed))
       ctx.a2ui(buildJourneySurface(ctx.state))
-      return `Recorded: ${JSON.stringify(clean)}`
+      return `Saved ${key}=${String(parsed)}.`
     },
   })
 
@@ -224,7 +266,7 @@ function buildTools(ctx: TurnContext) {
     description:
       'Assemble the spec from everything gathered and show it for confirmation. ' +
       'Call this when the interview is done. Do not search until the user confirms.',
-    parameters: z.object({}),
+    parameters: NO_ARGS,
     execute: async () => {
       const strict = (ctx.state.preferences.notes ?? []).includes('strict-budget')
       const criteria: Criterion[] = [
@@ -244,7 +286,7 @@ function buildTools(ctx: TurnContext) {
       'Search the marketplace, apply the criteria, rank what qualifies and render the ' +
       'results. Call once, only after the user confirms the spec. Returns the shortlist ' +
       'with rationales you should quote rather than rewrite.',
-    parameters: z.object({}),
+    parameters: NO_ARGS,
     execute: async () => {
       const prefs = ctx.state.preferences
       ctx.setPhase('research')
