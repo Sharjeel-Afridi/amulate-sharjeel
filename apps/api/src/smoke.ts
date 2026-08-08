@@ -79,21 +79,35 @@ const controller = new AbortController()
 const streaming = readStream(created.sessionId, controller.signal).catch(() => {})
 await wait(300)
 
+// The full interview, one answer per turn. It deliberately runs to completion
+// before anything is searched, so a short script no longer reaches results.
 const turns = [
-  'I need a car for weekend trips with two kids, about 400 a month',
-  'an SUV would be ideal, and boot space matters',
-  'from 12 September',
+  'rent',
+  'weekend trips with two kids',
+  'five',
+  'suv',
+  '400 a month',
+  '12 September',
+  '19 September',
+  'pram and big luggage',
+  'no preference',
+  'automatic',
+  'nothing to rule out',
+  // The spec gate: nothing is searched until this is confirmed.
+  'yes, go ahead and search',
 ]
 
 for (const turn of turns) {
   console.log(`\nuser    ${turn}`)
   await send(created.sessionId, turn)
-  await wait(1400)
+  await wait(900)
 }
+
+await wait(1800)
 
 console.log('\nuser    book the top one')
 await send(created.sessionId, 'book the top one')
-await wait(1600)
+await wait(1800)
 
 controller.abort()
 await streaming
