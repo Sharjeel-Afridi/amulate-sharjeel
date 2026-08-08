@@ -15,8 +15,17 @@
 
 export const A2UI_VERSION = 'v0.9' as const
 
-/** The standard component set. Our custom catalog extends this. */
+/** The standard component set. */
 export const BASIC_CATALOG = 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json'
+
+/**
+ * Our catalog: the basic set merged with `CarCard`, `MatchScore`, `PriceBadge`
+ * and `ReasoningStep`. A surface resolves exactly one catalog by exact id match,
+ * so custom components cannot be registered alongside the standard set — they
+ * have to ship as one merged catalog under its own id. Must stay in step with
+ * `CAR_CATALOG_ID` in `apps/web/src/a2ui/catalog.tsx`.
+ */
+export const CAR_CATALOG = 'https://car-matchmaker.local/catalogs/v1.json'
 
 /** A value that is either literal or bound to a path in the data model. */
 export type Dynamic<T> = T | { path: string }

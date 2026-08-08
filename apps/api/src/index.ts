@@ -7,6 +7,7 @@ import { type ServerEvent, sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
 import { ScriptedDriver, isBookingIntent } from './scripted-driver.js'
 import { createSession, emit, getSession, subscribe, update } from './sessions.js'
+import { buildCatalogueSurface, buildJourneySurface, initSurfaces } from './surfaces.js'
 
 const PORT = Number(process.env.API_PORT ?? 8080)
 
@@ -81,6 +82,16 @@ app.get('/api/session/:id/stream', (req, res) => {
   })
 
   res.write(sseFrame({ type: 'state', state }))
+
+  // Surfaces are created once per connected client. `createSurface` throws on a
+  // surface that already exists, so this cannot be re-sent on every update — and
+  // a reconnecting client rebuilds its processor from scratch anyway.
+  res.write(sseFrame({ type: 'a2ui', messages: initSurfaces() }))
+  if (state.shortlist.length > 0) {
+    // Replay the catalogue so a reconnect doesn't land on an empty stage.
+    res.write(sseFrame({ type: 'a2ui', messages: buildCatalogueSurface(state.shortlist) }))
+  }
+  res.write(sseFrame({ type: 'a2ui', messages: buildJourneySurface(state) }))
 
   const unsubscribe = subscribe(req.params.id, (event) => res.write(sseFrame(event)))
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15_000)

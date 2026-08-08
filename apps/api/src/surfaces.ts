@@ -2,13 +2,11 @@ import { carArtDataUri } from '@car/catalog'
 import { type RankedListing, type SessionState, isRental } from '@car/shared'
 import {
   type A2uiMessage,
+  BASIC_CATALOG,
+  CAR_CATALOG,
   SURFACES,
-  card,
   column,
   createSurface,
-  divider,
-  image,
-  list,
   row,
   text,
   updateComponents,
@@ -26,12 +24,26 @@ import {
 
 const money = (n: number) => `€${Math.round(n).toLocaleString('en-IE')}`
 
+/**
+ * Create the surfaces once, at session start.
+ *
+ * `createSurface` throws if the surface already exists, so creation is separated
+ * from update rather than being re-sent on every turn. This also matches the
+ * protocol's intent: surfaces are long-lived and patched incrementally.
+ */
+export function initSurfaces(): A2uiMessage[] {
+  return [
+    createSurface(SURFACES.journey, BASIC_CATALOG),
+    // The stage uses our merged catalog so CarCard and friends resolve.
+    createSurface(SURFACES.stage, CAR_CATALOG),
+  ]
+}
+
 /** Journey rail: the spec assembling as the interview proceeds. */
 export function buildJourneySurface(state: SessionState): A2uiMessage[] {
   const p = state.preferences
 
   return [
-    createSurface(SURFACES.journey),
     // The whole preference object goes into the data model so bound components
     // update themselves on the next patch rather than being rebuilt.
     updateDataModel(SURFACES.journey, '/', {
@@ -62,7 +74,6 @@ export function buildJourneySurface(state: SessionState): A2uiMessage[] {
 /** Stage while the agent is searching — live counters rather than a dead spinner. */
 export function buildSearchingSurface(): A2uiMessage[] {
   return [
-    createSurface(SURFACES.stage),
     updateComponents(SURFACES.stage, [
       column('root', ['heading', 'note']),
       text('heading', 'Searching the marketplace…', 'h4'),
@@ -78,50 +89,67 @@ export function buildSearchingSurface(): A2uiMessage[] {
  * page, so it is structural, not decorative.
  */
 export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[] {
-  const components = [
-    column('root', ['heading', 'grid']),
-    text('heading', `${shortlist.length} matches, ranked`, 'h4'),
-    list('grid', shortlist.map((r) => `card-${r.listing.id}`)),
-  ]
-
-  for (const entry of shortlist) {
+  // Data-driven rather than one component per car: the card is declared once as
+  // a template and fanned out over `/cars`, so re-ranking is a data-model patch
+  // instead of a full component rebuild.
+  const cars = shortlist.map((entry) => {
     const { listing, rank, score, rationale } = entry
-    const id = listing.id
-    const price = isRental(listing)
-      ? `${money(listing.monthlyRate)}/mo`
-      : money(listing.price)
-
-    const spec = [
-      listing.category,
-      String(listing.year),
-      listing.fuel,
-      `${listing.bootLitres} L boot`,
-      `${listing.seats} seats`,
-    ].join(' · ')
-
-    components.push(
-      card(`card-${id}`, `body-${id}`),
-      column(`body-${id}`, [
-        `art-${id}`,
-        `name-${id}`,
-        `spec-${id}`,
-        `price-${id}`,
-        `rule-${id}`,
-        `why-${id}`,
-      ]),
-      image(`art-${id}`, carArtDataUri(listing.brand, listing.category), `${listing.brand} ${listing.model}`),
-      text(`name-${id}`, `${rank}. ${listing.brand} ${listing.model}  ·  ${score}`, 'h5'),
-      text(`spec-${id}`, spec, 'caption'),
-      text(`price-${id}`, price, 'h5'),
-      divider(`rule-${id}`),
-      text(`why-${id}`, rationale, 'caption'),
-    )
-  }
+    const rental = isRental(listing)
+    return {
+      id: listing.id,
+      title: `${rank}. ${listing.brand} ${listing.model}`,
+      subtitle: [listing.category, listing.year, listing.fuel, listing.transmission].join(' · '),
+      imageUrl: carArtDataUri(listing.brand, listing.category),
+      tags: [`${listing.bootLitres} L boot`, `${listing.seats} seats`, `${listing.consumption} ${rental ? 'L/100km' : 'L/100km'}`],
+      score,
+      price: rental ? listing.monthlyRate : listing.price,
+      period: rental ? 'month' : '',
+      rationale,
+      selected: rank === 1,
+    }
+  })
 
   return [
-    createSurface(SURFACES.stage),
-    updateDataModel(SURFACES.stage, '/', { count: shortlist.length }),
-    updateComponents(SURFACES.stage, components),
+    updateDataModel(SURFACES.stage, '/', {
+      headline: `${shortlist.length} matches, ranked`,
+      cars,
+    }),
+    updateComponents(SURFACES.stage, [
+      column('root', ['heading', 'grid']),
+      text('heading', { path: '/headline' }, 'h4'),
+      // Templated fan-out. Bindings inside the template are relative and carry
+      // no './' prefix — that would resolve to a broken pointer.
+      { id: 'grid', component: 'Column', children: { componentId: 'carRow', path: '/cars' } },
+      {
+        id: 'carRow',
+        component: 'CarCard',
+        title: { path: 'title' },
+        subtitle: { path: 'subtitle' },
+        imageUrl: { path: 'imageUrl' },
+        tags: { path: 'tags' },
+        selected: { path: 'selected' },
+        child: 'carBody',
+        action: {
+          event: {
+            name: 'selectCar',
+            context: { listingId: { path: 'id' }, title: { path: 'title' } },
+          },
+        },
+      },
+      column('carBody', ['carMeta', 'carWhy']),
+      row('carMeta', ['carScore', 'carPrice'], { justify: 'spaceBetween', align: 'center' }),
+      { id: 'carScore', component: 'MatchScore', score: { path: 'score' }, label: 'match' },
+      {
+        id: 'carPrice',
+        component: 'PriceBadge',
+        amount: { path: 'price' },
+        currency: '€',
+        period: { path: 'period' },
+      },
+      // The rationale is structural, not decorative — it is what makes this a
+      // recommendation rather than a listings page.
+      { id: 'carWhy', component: 'ReasoningStep', title: { path: 'rationale' }, status: 'done' },
+    ]),
   ]
 }
 
