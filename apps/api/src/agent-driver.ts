@@ -52,6 +52,30 @@ const DEFAULT_MODELS: Record<string, string> = {
 /** A turn that has not resolved by now is throttled or wedged; say so. */
 const TURN_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 45_000)
 
+const isRateLimit = (err: unknown): boolean =>
+  /\b429\b|rate.?limit|RESOURCE_EXHAUSTED|quota/i.test(err instanceof Error ? err.message : String(err))
+
+/**
+ * Free tiers throttle aggressively, and a single agent turn makes several model
+ * calls while working through tools. Without a retry a burst of typing produces
+ * a dead chat; with one it just runs slightly slower.
+ */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (!isRateLimit(err) || i === attempts - 1) throw err
+      const backoff = 2000 * 2 ** i
+      console.warn(`[agent] rate limited, retrying in ${backoff}ms (${i + 1}/${attempts - 1})`)
+      await new Promise((r) => setTimeout(r, backoff))
+    }
+  }
+  throw lastError
+}
+
 export interface AgentConfig {
   provider: string
   apiKey: string
@@ -347,7 +371,7 @@ export class LlmAgentDriver implements AgentDriver {
       const result = await Promise.race([
         // A generous ceiling: the loop should end in two or three tool calls, so
         // hitting this means the model is stuck, and the error says so plainly.
-        run(agent, text, { maxTurns: 12 }),
+        withRateLimitRetry(() => run(agent, text, { maxTurns: 12 })),
         new Promise<never>((_, reject) =>
           setTimeout(
             () =>
