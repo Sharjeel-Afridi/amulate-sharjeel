@@ -1,4 +1,4 @@
-import { Agent, MCPServerStreamableHttp, run, tool } from '@openai/agents'
+import { Agent, MCPServerStreamableHttp, run, setTracingDisabled, tool } from '@openai/agents'
 import { setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents-openai'
 import { type Criterion, screen } from '@car/shared'
 import OpenAI from 'openai'
@@ -34,11 +34,23 @@ const BASE_URLS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
 }
 
+/**
+ * Free-tier friendly defaults.
+ *
+ * `gemini-2.5-flash` allows only 5 requests a minute on the free tier, and a
+ * single agent turn makes several model calls while it works through tools — so
+ * it 429s immediately. The SDK retries those internally, which presents as the
+ * turn simply hanging rather than as an error. `flash-lite` has a far higher
+ * allowance and is entirely adequate for this workload.
+ */
 const DEFAULT_MODELS: Record<string, string> = {
-  gemini: 'gemini-2.5-flash',
+  gemini: 'gemini-2.5-flash-lite',
   groq: 'llama-3.3-70b-versatile',
   openai: 'gpt-4o-mini',
 }
+
+/** A turn that has not resolved by now is throttled or wedged; say so. */
+const TURN_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 45_000)
 
 export interface AgentConfig {
   provider: string
@@ -67,6 +79,9 @@ function configureProvider(cfg: AgentConfig): void {
   // Only OpenAI implements the Responses API; every compatible provider speaks
   // chat completions, so pin it rather than letting the SDK negotiate.
   setOpenAIAPI('chat_completions')
+  // Tracing uploads to OpenAI, which we are not using — without this every turn
+  // logs a warning about a missing key that has nothing to do with our provider.
+  setTracingDisabled(true)
   configured = true
 }
 
@@ -92,6 +107,20 @@ interviewing them properly, then searching a marketplace and explaining your rec
 
 5. BOOK. When they choose a car, call open_booking with its listing id.
 
+## How a turn works — read this carefully
+
+Each user message is ONE turn. In a turn you may call a few tools, and then you
+MUST finish by writing a short reply. The reply is what the user reads.
+
+- After calling ask_question, your reply IS that question, phrased naturally.
+  Do NOT call ask_question again in the same turn.
+- Call record_preferences at most once per turn.
+- Never call the same tool twice in one turn.
+- If you have already called a tool and know what to say, say it. Do not keep
+  calling tools looking for more to do.
+
+A turn that ends without text is a failure — the user sees nothing.
+
 ## Rules
 
 - One question per turn. Short, conversational, no preamble.
@@ -114,7 +143,9 @@ function buildTools(ctx: TurnContext) {
       if (!q) return `No question with id ${questionId}`
       ctx.patchInterview({ pending: q.id })
       ctx.a2ui(buildQuestionSurface(q))
-      return `Rendered the control for "${q.ask}". Ask it conversationally now.`
+      // Directive rather than descriptive: a tool result that reads like a
+      // suggestion invites another tool call instead of an answer.
+      return `Done. Now STOP calling tools and reply with this question in your own words: "${q.ask}"`
     },
   })
 
@@ -310,10 +341,37 @@ export class LlmAgentDriver implements AgentDriver {
   }
 
   async handleUserMessage(ctx: TurnContext, text: string): Promise<void> {
-    const agent = await this.agentFor(ctx)
-    const result = await run(agent, text)
-    const output = String(result.finalOutput ?? '').trim()
-    if (output) ctx.say(output)
+    const started = Date.now()
+    try {
+      const agent = await this.agentFor(ctx)
+      const result = await Promise.race([
+        // A generous ceiling: the loop should end in two or three tool calls, so
+        // hitting this means the model is stuck, and the error says so plainly.
+        run(agent, text, { maxTurns: 12 }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `No response after ${TURN_TIMEOUT_MS / 1000}s — the provider is probably rate-limiting. ` +
+                    'Set AGENT_MODE=scripted to fall back.',
+                ),
+              ),
+            TURN_TIMEOUT_MS,
+          ),
+        ),
+      ])
+      const output = String(result.finalOutput ?? '').trim()
+      console.log(`[agent] turn ok in ${Date.now() - started}ms, ${output.length} chars`)
+      if (output) ctx.say(output)
+      else ctx.say('Sorry — I lost my thread there. Could you say that again?')
+    } catch (err) {
+      // A provider error must not leave the user staring at a dead chat, so it
+      // surfaces in the conversation as well as the log.
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[agent] turn failed after ${Date.now() - started}ms:`, message)
+      throw new Error(`The model call failed: ${message}`)
+    }
   }
 
   async handleUiAction(
