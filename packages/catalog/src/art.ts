@@ -28,9 +28,11 @@ const BODY_BOTTOM = 66
 const WHEEL_Y = 70
 
 const PROFILES: Record<Category, Profile> = {
+  // Short, steep tail — that near-vertical hatch is what makes it read as a hatchback
+  // rather than a small sedan.
   hatchback: {
-    noseX: 24, tailX: 176, bodyTop: 50, roofTop: 28, cabinStart: 66, cabinEnd: 150,
-    wsSlant: 16, rearSlant: 10, frontWheelX: 58, rearWheelX: 148, wheelR: 13, style: 'standard',
+    noseX: 24, tailX: 168, bodyTop: 50, roofTop: 28, cabinStart: 66, cabinEnd: 158,
+    wsSlant: 16, rearSlant: 6, frontWheelX: 58, rearWheelX: 144, wheelR: 13, style: 'standard',
   },
   sedan: {
     noseX: 14, tailX: 186, bodyTop: 50, roofTop: 30, cabinStart: 70, cabinEnd: 136,
@@ -53,8 +55,8 @@ const PROFILES: Record<Category, Profile> = {
     wsSlant: 20, rearSlant: 26, frontWheelX: 54, rearWheelX: 150, wheelR: 14, style: 'fastback',
   },
   convertible: {
-    noseX: 16, tailX: 182, bodyTop: 52, roofTop: 38, cabinStart: 74, cabinEnd: 132,
-    wsSlant: 14, rearSlant: 0, frontWheelX: 54, rearWheelX: 148, wheelR: 13, style: 'convertible',
+    noseX: 16, tailX: 180, bodyTop: 50, roofTop: 36, cabinStart: 72, cabinEnd: 150,
+    wsSlant: 12, rearSlant: 0, frontWheelX: 54, rearWheelX: 148, wheelR: 13, style: 'convertible',
   },
   pickup: {
     noseX: 14, tailX: 190, bodyTop: 44, roofTop: 22, cabinStart: 52, cabinEnd: 112,
@@ -65,8 +67,8 @@ const PROFILES: Record<Category, Profile> = {
     wsSlant: 20, rearSlant: 4, frontWheelX: 52, rearWheelX: 154, wheelR: 14, style: 'standard',
   },
   sports: {
-    noseX: 10, tailX: 188, bodyTop: 56, roofTop: 38, cabinStart: 76, cabinEnd: 138,
-    wsSlant: 18, rearSlant: 28, frontWheelX: 52, rearWheelX: 152, wheelR: 14, style: 'fastback',
+    noseX: 10, tailX: 188, bodyTop: 52, roofTop: 31, cabinStart: 74, cabinEnd: 140,
+    wsSlant: 20, rearSlant: 30, frontWheelX: 52, rearWheelX: 152, wheelR: 15, style: 'fastback',
   },
 }
 
@@ -169,7 +171,7 @@ export function carArt(brand: string, category: Category): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 92" width="200" height="92" role="img" aria-label="${brand} ${category}">`,
     `<ellipse cx="100" cy="86" rx="82" ry="5" fill="#000" opacity="0.22"/>`,
     `<path d="${bodyPath(p)}" fill="${body}"/>`,
-    `<path d="${bodyPath(p)}" fill="${bodyDark}" opacity="0.35" clip-path="inset(${BODY_BOTTOM - 8}px 0 0 0)"/>`,
+    `<rect x="${p.noseX}" y="${BODY_BOTTOM - 6}" width="${p.tailX - p.noseX}" height="6" fill="${bodyDark}" opacity="0.4"/>`,
     `<path d="${glassPath(p)}" fill="${glass}" opacity="0.55"/>`,
     wheel(p.frontWheelX, p.wheelR),
     wheel(p.rearWheelX, p.wheelR),

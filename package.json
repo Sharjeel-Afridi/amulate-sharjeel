@@ -20,6 +20,7 @@
     "typecheck": "tsc -b --pretty"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "concurrently": "^9.1.2",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2"

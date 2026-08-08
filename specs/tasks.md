@@ -5,15 +5,18 @@ Ordered. `[x]` done · `[~]` in progress · `[ ]` not started.
 ## Phase 0 — Foundation (h0–1)
 - [x] Repo scaffold, workspaces, TS base config
 - [x] Spec, plan, task breakdown
-- [ ] Workspace package skeletons (`shared`, `catalog`, `mcp-marketplace`, `api`, `web`)
-- [ ] `.env.example`, dependency install
+- [x] Workspace packages: `shared`, `catalog`, `mcp-marketplace`
+- [ ] `.env.example`, `api` and `web` skeletons
 
 ## Phase 1 — Marketplace (h1–3)
-- [ ] Domain types in `packages/shared`
-- [ ] Deterministic catalog generator — 300 listings / 10 categories / 10 brands
-- [ ] SVG car-art generator (category silhouette + brand-hashed hue)
-- [ ] MCP server with `search_listings`, `get_listing`, `check_availability`
-- [ ] Verify server in MCP Inspector
+- [x] Domain types in `packages/shared`
+- [x] Deterministic catalog generator — 400 listings / 10 categories / 10 brands, both modes
+- [x] SVG car-art generator (category silhouette + brand-hashed hue)
+- [x] Catalogue verification gate (`npm run verify -w @car/catalog`)
+- [x] MCP server with `search_listings`, `get_listing`, `check_availability`
+- [x] MCP Apps: predeclared `ui://` booking form and checkout, `_meta.ui.resourceUri` on tools
+- [x] Booking round-trip: `start_booking` → `submit_booking` → `start_checkout` → `confirm_payment`
+- [x] End-to-end MCP client smoke test (`npm run smoke -w @car/mcp-marketplace`)
 
 ## Phase 2 — Walking skeleton (h3–5)
 - [ ] Express API + SSE stream
