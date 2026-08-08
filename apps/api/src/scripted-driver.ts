@@ -132,10 +132,19 @@ export class ScriptedDriver implements AgentDriver {
   async startBooking(ctx: TurnContext, listingId: string): Promise<void> {
     ctx.setPhase('book')
     const prefs = ctx.state.preferences
+
+    // A rental with no return date opens the form on "0 days, €0" and a
+    // validation error, which reads as broken. Default to a week — the user can
+    // change it, but they start from something plausible.
+    const startDate = prefs.targetDate
+    const endDate =
+      prefs.returnDate ??
+      (prefs.mode !== 'buy' && startDate ? addDays(startDate, 7) : undefined)
+
     const { html } = await callToolForApp('start_booking', {
       listingId,
-      startDate: prefs.targetDate,
-      endDate: prefs.returnDate,
+      startDate,
+      endDate,
     })
     ctx.step('Opened booking form', 'Rendered in chat as an MCP App')
     ctx.mcpApp('start_booking', html)
@@ -158,3 +167,10 @@ export const isBookingIntent = (text: string): boolean =>
 
 export const listingLabel = (l: Listing): string =>
   `${l.brand} ${l.model} — ${isRental(l) ? `€${l.monthlyRate}/mo` : `€${l.price.toLocaleString('en-IE')}`}`
+
+/** Shifts an ISO date by whole days, staying in UTC to avoid a local-tz slip. */
+function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}

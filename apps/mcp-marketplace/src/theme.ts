@@ -21,7 +21,10 @@ export const THEME_CSS = `
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
-  background: transparent;
+  /* A sandboxed srcdoc iframe has nothing behind it, so "transparent" resolves
+     to the browser default of white and the dark palette becomes unreadable.
+     The host can still override --bg through the initialize handshake. */
+  background: var(--bg);
   color: var(--text);
   font: 400 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;

@@ -30,6 +30,9 @@ const HOST_CONTEXT = {
   styles: {
     '--accent': '#c8ff3d',
     '--accent-ink': '#16200a',
+    // The iframe has nothing behind it, so it needs an explicit surface or it
+    // falls back to white and the dark widget becomes unreadable.
+    '--bg': '#101216',
   },
 }
 
