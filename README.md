@@ -8,9 +8,8 @@ the chat.
 
 Built for the Amulate hackathon.
 
-![The landing gate — a BMW M4 rendered in WebGL under the headline "Stop browsing.
-Start driving.", with a live speed and RPM readout, the prompt to hold the up
-arrow to ignite, and the marketplace size shown as 290 live listings.](docs/intro.png)
+<img width="1512" height="873" alt="Screenshot 2026-08-10 at 12 59 40 AM" src="https://github.com/user-attachments/assets/c1be30c1-cc16-4dfa-a531-b471cfbfcae2" />
+
 
 ---
 
