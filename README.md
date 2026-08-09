@@ -109,6 +109,12 @@ Preferring petrol is not the same as excluding diesel — only the dealbreaker
 question creates exclusions. When a dealbreaker empties the shortlist the agent
 reports which one and by how much, rather than silently returning less.
 
+A requirement is as absolute as a dealbreaker, so only the pass/fail answers get
+one: body style, headcount, a mileage ceiling. Your budget is a *preference*
+unless you tick "nothing above my budget" — over-budget cars stay on the list,
+below everything that fits, because a bit over is often worth seeing. The luggage
+figure is a preference too; it is a number the chips carry, not one you gave.
+
 ---
 
 ## Architecture

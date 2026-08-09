@@ -9,7 +9,7 @@ import {
 import { z } from 'zod'
 import { withRateLimitRetry, withTimeout } from './llm.js'
 import type { Ranker } from './journey.js'
-import { rank as scoreListings } from './ranking.js'
+import { affordableFirst, rank as scoreListings } from './ranking.js'
 
 /**
  * The agent that ranks.
@@ -174,6 +174,19 @@ function describeSpec(prefs: Preferences, criteria: Criterion[]): string {
     }
   }
 
+  // The soft ones have to be spelled out, because candidates that miss them are
+  // in the list. Told only that every car "passed their hard conditions", the
+  // model reads an over-budget car as being inside the budget and writes a
+  // rationale that says so.
+  const soft = [...criteria.filter((c) => c.kind === 'preference')].sort(
+    (a, b) => (b.weight ?? 0) - (a.weight ?? 0),
+  )
+  if (soft.length > 0) {
+    lines.push('Preferences — rank on these, never exclude on them, most important first:')
+    for (const c of soft) lines.push(`  - prefers: ${c.label}`)
+    lines.push('Some candidates miss one of these. Say which, and rank them below the ones that do not.')
+  }
+
   return lines.join('\n')
 }
 
@@ -266,8 +279,13 @@ export function createModelRanker(model: string): Ranker {
           `(${output.ranking.length} returned, ${pool.length} sent)`,
       )
 
+      // The model may order these however it likes, except for this: a soft
+      // budget is still a budget, and nothing over it goes above a car that
+      // fits. Enforced after the fact rather than left to the instructions,
+      // because the top card is presented as the answer and "usually obeys" is
+      // not good enough for that slot.
       return {
-        shortlist: ordered.slice(0, SHORTLIST_SIZE),
+        shortlist: affordableFirst(ordered, prefs).slice(0, SHORTLIST_SIZE),
         summary: output.summary?.trim() || undefined,
         rankedBy: 'model',
       }

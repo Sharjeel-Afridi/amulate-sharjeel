@@ -165,7 +165,7 @@ const LEAD_COUNT = 3
  */
 export function buildCatalogueSurface(
   shortlist: RankedListing[],
-  { nearMiss = false }: { nearMiss?: boolean } = {},
+  { nearMiss = false, stretched = 0 }: { nearMiss?: boolean; stretched?: number } = {},
 ): A2uiMessage[] {
   // Data-driven rather than one component per car: the card is declared once as
   // a template and fanned out over the arrays, so re-ranking is a data-model
@@ -200,11 +200,19 @@ export function buildCatalogueSurface(
       // Near-misses are never called matches. The whole point of showing them is
       // that they failed something, and a headline that says "3 matches" over
       // three cars each captioned "misses your budget" reads as a bug.
+      //
+      // `stretched` is the softer version of the same problem: a soft budget puts
+      // over-budget cars on the ranked list deliberately, so the count of real
+      // matches is the count that clears everything, not the length of the list.
       headline: nearMiss
         ? 'Nothing cleared every condition — closest first'
-        : shortlist.length === 1
-          ? '1 match'
-          : `${shortlist.length} matches, ranked`,
+        : stretched >= shortlist.length
+          ? `Nothing matches everything — closest ${shortlist.length}, ranked`
+          : stretched > 0
+            ? `${shortlist.length - stretched} matching, then ${stretched} that stretch your spec`
+            : shortlist.length === 1
+              ? '1 match'
+              : `${shortlist.length} matches, ranked`,
       restHeadline: nearMiss
         ? 'Further off'
         : tail.length === 1

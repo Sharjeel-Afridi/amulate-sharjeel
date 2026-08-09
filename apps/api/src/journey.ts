@@ -4,6 +4,7 @@ import {
   type ListingAssessment,
   type Preferences,
   type RankedListing,
+  assess,
   missingFields,
   money,
   screen,
@@ -261,6 +262,20 @@ function nearMisses(ruledOut: ListingAssessment[], prefs: Preferences): RankedLi
 }
 
 /**
+ * How many of the shortlist miss something the user only stated a preference for.
+ *
+ * Soft criteria rank rather than filter, so a shortlist can legitimately hold
+ * cars that are over budget or short on boot. Calling those "matches" is the
+ * same dishonesty the empty-stage path was built to avoid, so the count is
+ * carried into the copy instead of being papered over.
+ */
+function stretchCount(shortlist: RankedListing[], criteria: Criterion[]): number {
+  return shortlist.filter((r) =>
+    assess(r.listing, criteria).verdicts.some((v) => !v.passed && v.criterion.kind === 'preference'),
+  ).length
+}
+
+/**
  * Search, screen, rank and render.
  *
  * `narrate` is off when the conversational model asked for this, because it
@@ -347,6 +362,9 @@ export async function runResearch(
     ctx.state.criteria,
   )
 
+  const stretched = stretchCount(shortlist, ctx.state.criteria)
+  const clean = shortlist.length - stretched
+
   ctx.setShortlist(shortlist)
   ctx.setPhase('recommend')
   ctx.patchInterview({ dirty: false })
@@ -355,9 +373,13 @@ export async function runResearch(
     rankedBy === 'model'
       ? 'Ranked by the agent against your spec'
       : 'Ranked the qualifying cars on your stated priorities',
-    rankedBy === 'model' ? `${shortlist.length} cars, each scored and explained` : undefined,
+    stretched > 0
+      ? `${clean} clear everything, ${stretched} stretch a preference and rank below them`
+      : rankedBy === 'model'
+        ? `${shortlist.length} cars, each scored and explained`
+        : undefined,
   )
-  ctx.a2ui(buildCatalogueSurface(shortlist))
+  ctx.a2ui(buildCatalogueSurface(shortlist, { stretched }))
 
   const top = shortlist[0]
   if (narrate) {
@@ -368,10 +390,19 @@ export async function runResearch(
     // qualified" will sooner or later say three, and a wrong number in the first
     // sentence discredits the correct reasoning after it. It supplies the
     // judgement; the arithmetic stays here.
+    //
+    // "Clears every condition" is only said of the cars it is true of. A soft
+    // budget puts over-budget cars on this list on purpose, and claiming they
+    // matched would undo the reason for showing them.
     const lead =
-      shortlist.length === 1
-        ? `One car clears every condition.${excluded}`
-        : `${shortlist.length} cars clear every condition.${excluded}`
+      stretched === 0
+        ? shortlist.length === 1
+          ? `One car clears every condition.${excluded}`
+          : `${shortlist.length} cars clear every condition.${excluded}`
+        : clean === 0
+          ? `Nothing here clears everything you asked for.${excluded} These ${shortlist.length} come closest, and each card says what it gives up.`
+          : `${clean === 1 ? 'One car clears' : `${clean} cars clear`} every condition.${excluded} ` +
+            `${stretched} more miss something you said you'd prefer — each card says what — so they rank below.`
     ctx.say(
       summary
         ? `${lead} ${summary}`

@@ -354,7 +354,27 @@ export function dealbreakerCriteria(values: string[]): Criterion[] {
   return out
 }
 
-/** Requirements derived from the interview answers — hard, but not vetoes. */
+/**
+ * Relative importance for the soft criteria, mirroring the scorer's weights for
+ * the same fields (`RENT_WEIGHTS` / `BUY_WEIGHTS` in `@car/ranking`, where price
+ * is 22 and boot 10 in both modes).
+ *
+ * Copied rather than imported: the scorer does the real arithmetic and takes it
+ * straight from `Preferences`, so these numbers only order the soft list the
+ * ranking agent is shown, and the interview has no other reason to depend on the
+ * scoring package.
+ */
+const SOFT_WEIGHTS = { budget: 22, boot: 10 } as const
+
+/**
+ * The criteria derived from the interview answers.
+ *
+ * Two kinds come out of here. A `requirement` is as absolute as a dealbreaker —
+ * `assess` disqualifies on either — so only the answers that really are pass/fail
+ * get one: the body style, the headcount, a mileage ceiling the user picked off a
+ * list. The answers that are an approximation of what someone said come out as
+ * `preference`, which ranks rather than filters.
+ */
 export function requirementCriteria(prefs: Preferences, strictBudget: boolean): Criterion[] {
   const out: Criterion[] = []
 
@@ -383,7 +403,13 @@ export function requirementCriteria(prefs: Preferences, strictBudget: boolean): 
   if (prefs.bootLitresMin) {
     out.push({
       id: 'boot',
-      kind: 'requirement',
+      // Soft, and more clearly so than the budget: the litre figure is ours, not
+      // theirs. "Pram, sports kit, big luggage" becomes 460 L and "as much as
+      // possible" becomes 600 L because the chips have to carry a number —
+      // rejecting a 450 L boot against a threshold we picked on their behalf is
+      // false precision. The scorer penalises the shortfall instead.
+      kind: 'preference',
+      weight: SOFT_WEIGHTS.boot,
       label: `Boot over ${prefs.bootLitresMin} L`,
       field: 'bootLitres',
       op: 'gte',
@@ -391,16 +417,35 @@ export function requirementCriteria(prefs: Preferences, strictBudget: boolean): 
     })
   }
   if (prefs.budgetMax) {
-    out.push({
-      id: 'budget',
-      // Only a veto if the user said so; otherwise over-budget cars can still
-      // appear, ranked down, because "a bit over" is often worth seeing.
-      kind: strictBudget ? 'exclusion' : 'requirement',
-      label: `Within ${money(prefs.budgetMax)}`,
-      field: 'price',
-      op: 'lte',
-      value: prefs.budgetMax,
-    })
+    // A veto only if the user said so. Otherwise it ranks rather than filters:
+    // over-budget cars stay on the shortlist and are banded below everything
+    // affordable (`withinBudget` in @car/ranking), because "a bit over" is often
+    // worth seeing but is never the better answer.
+    //
+    // This was a `requirement`, which reads soft and is not — `assess`
+    // disqualifies on a failed requirement exactly as it does on an exclusion, so
+    // a car $50 a month over was dropped outright: the one case this was written
+    // to keep.
+    out.push(
+      strictBudget
+        ? {
+            id: 'budget',
+            kind: 'exclusion',
+            label: `Within ${money(prefs.budgetMax)}`,
+            field: 'price',
+            op: 'lte',
+            value: prefs.budgetMax,
+          }
+        : {
+            id: 'budget',
+            kind: 'preference',
+            weight: SOFT_WEIGHTS.budget,
+            label: `Within ${money(prefs.budgetMax)}`,
+            field: 'price',
+            op: 'lte',
+            value: prefs.budgetMax,
+          },
+    )
   }
   if (prefs.maxMileageKm) {
     out.push({
@@ -560,13 +605,23 @@ export function specSheet(prefs: Preferences, criteria: Criterion[]): SpecSheetR
   return rows
 }
 
-/** A one-line spec the agent states back before searching. */
+/**
+ * A one-line spec the agent states back before searching.
+ *
+ * Soft criteria are listed too, and say so. Dropping them was tempting — this is
+ * the "conditions" list — but the budget is usually soft, and a spec sheet that
+ * silently omits the budget the user just set is the one omission they will
+ * notice. Saying which lines are negotiable is also what makes the shortlist
+ * legible when an over-budget car turns up on it.
+ */
 export function describeSpecFull(prefs: Preferences, criteria: Criterion[]): string[] {
   const lines: string[] = []
   lines.push(prefs.mode === 'buy' ? 'Buying' : 'Renting')
   if (prefs.useCase) lines.push(`For: ${prefs.useCase}`)
-  for (const c of criteria.filter((c) => c.kind !== 'preference')) {
-    lines.push(`${c.kind === 'exclusion' ? '✕' : '✓'} ${c.label}`)
+  for (const c of criteria) {
+    const mark = c.kind === 'exclusion' ? '✕' : c.kind === 'requirement' ? '✓' : '~'
+    const soft = c.kind === 'preference' ? ' — preferred, not required' : ''
+    lines.push(`${mark} ${c.label}${soft}`)
   }
   if (prefs.targetDate) lines.push(`From ${prefs.targetDate}`)
   if (prefs.returnDate) lines.push(`Until ${prefs.returnDate}`)

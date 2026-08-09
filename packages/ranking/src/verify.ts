@@ -7,7 +7,7 @@
  */
 import { catalog, searchListings } from '@car/catalog'
 import { type Preferences, type RankedListing, isRental } from '@car/shared'
-import { rankListings } from './rank.js'
+import { rankListings, withinBudget } from './rank.js'
 
 const failures: string[] = []
 const all = catalog()
@@ -39,7 +39,7 @@ function report(title: string, ranked: RankedListing[]): void {
   }
 }
 
-function check(ranked: RankedListing[], label: string): void {
+function check(ranked: RankedListing[], label: string, prefs: Preferences): void {
   if (!ranked.length) {
     failures.push(`${label}: nothing ranked`)
     return
@@ -47,9 +47,17 @@ function check(ranked: RankedListing[], label: string): void {
 
   ranked.forEach((r, i) => {
     const who = `${label} #${i + 1} ${r.listing.brand} ${r.listing.model}`
+    const prev = i > 0 ? ranked[i - 1] : undefined
     if (!Number.isFinite(r.score) || r.score < 0 || r.score > 100) failures.push(`${who}: score ${r.score} out of 0..100`)
     if (r.rank !== i + 1) failures.push(`${who}: rank ${r.rank} is not ${i + 1}`)
-    if (i > 0 && ranked[i - 1].score < r.score) failures.push(`${who}: scored above the listing ranked ahead of it`)
+    // Affordability bands before score does, so the descending-score guarantee
+    // holds inside a band rather than across the whole list.
+    if (prev && withinBudget(prev.listing, prefs) === withinBudget(r.listing, prefs) && prev.score < r.score) {
+      failures.push(`${who}: scored above the listing ranked ahead of it`)
+    }
+    if (prev && !withinBudget(prev.listing, prefs) && withinBudget(r.listing, prefs)) {
+      failures.push(`${who}: is inside the budget but ranked below a car that is not`)
+    }
     if (!r.rationale.trim()) failures.push(`${who}: empty rationale`)
     if (!/\d/.test(r.rationale)) failures.push(`${who}: rationale cites no figure — "${r.rationale}"`)
     if (!r.factors.length) failures.push(`${who}: no factors`)
@@ -85,7 +93,7 @@ const rentSearch = searchListings(all, {
 const rentRanked = rankListings(rentSearch.listings, rentPrefs)
 console.log(`rent search   ${rentSearch.matched} matched of ${rentSearch.totalScanned} scanned, relaxed: [${rentSearch.relaxed}]`)
 report('RENT — SUV, <= EUR 400/mo, boot >= 450 L', rentRanked)
-check(rentRanked, 'rent')
+check(rentRanked, 'rent', rentPrefs)
 
 // --- Purchases: sedan, total budget, mileage ceiling ------------------------
 const buyPrefs: Preferences = {
@@ -105,7 +113,53 @@ const buySearch = searchListings(all, {
 const buyRanked = rankListings(buySearch.listings, buyPrefs)
 console.log(`\n\nbuy search    ${buySearch.matched} matched of ${buySearch.totalScanned} scanned, relaxed: [${buySearch.relaxed}]`)
 report('BUY — sedan, <= EUR 25,000, <= 80,000 km', buyRanked)
-check(buyRanked, 'buy')
+check(buyRanked, 'buy', buyPrefs)
+
+// --- A soft budget: over-budget cars are shown, and never above one that fits --
+// The interview only makes the budget a dealbreaker when the user says so, so
+// the usual shortlist has over-budget cars on it. They have to be ranked down
+// rather than promoted by a good boot and a good rating, and the arithmetic
+// alone will not do that — the price is one weight among a dozen.
+// The ceiling is chosen so a pure score sort really would get this wrong — see
+// the load-bearing assertion below. A scenario the banding does not change would
+// pass whether or not the code does anything.
+const softPrefs: Preferences = { ...rentPrefs, budgetMax: 1600 }
+const softPool = searchListings(all, { mode: 'rent', category: 'suv' }).listings
+const softRanked = rankListings(softPool, softPrefs)
+const over = softRanked.filter((r) => !withinBudget(r.listing, softPrefs))
+const under = softRanked.filter((r) => withinBudget(r.listing, softPrefs))
+console.log(
+  `\n\nsoft budget   ${softPool.length} SUV hires against a EUR 1,600/mo ceiling: ` +
+    `${under.length} inside, ${over.length} over`,
+)
+report('RENT — SUV, soft EUR 1,600/mo ceiling', softRanked)
+check(softRanked, 'soft budget', softPrefs)
+
+if (!over.length || !under.length) {
+  failures.push('soft budget: the pool has no cars on both sides of the ceiling, so it proves nothing')
+} else {
+  // Score alone has to be demonstrably insufficient here, or this scenario is
+  // asserting a property that holds by accident.
+  const byScore = [...softRanked].sort((a, b) => b.score - a.score)
+  const firstOver = byScore.findIndex((r) => !withinBudget(r.listing, softPrefs))
+  const lastInside = byScore.map((r) => withinBudget(r.listing, softPrefs)).lastIndexOf(true)
+  if (lastInside <= firstOver) {
+    failures.push('soft budget: sorting on score alone would already have got this right — pick a tighter ceiling')
+  }
+
+  // The banding is only defensible if the score argues for it too, so every
+  // over-budget car must carry the penalty in its trace.
+  const unpenalised = over.filter((r) => !r.factors.some((f) => f.label === 'Monthly rate' && f.delta < 0))
+  if (unpenalised.length) {
+    failures.push(`soft budget: ${unpenalised.length} over-budget cars show no negative rate factor`)
+  }
+
+  console.log(
+    `              best over-budget ${over[0].listing.brand} ${over[0].listing.model} scores ` +
+      `${over[0].score} at #${over[0].rank}; worst affordable ${under[under.length - 1].score} at ` +
+      `#${under[under.length - 1].rank}. On score alone it would have sat at #${firstOver + 1}.`,
+  )
+}
 
 // --- Rent and buy must be reasoning about different things ------------------
 const rentLabels = new Set(rentRanked.flatMap((r) => r.factors.map((f) => f.label)))
