@@ -1,6 +1,15 @@
 import { type Span, type Tracer, trace } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+/*
+ * Protobuf, not JSON.
+ *
+ * `exporter-trace-otlp-http` posts `application/json`, which Phoenix rejects
+ * outright with a 415 ("Unsupported content type") — protobuf is OTLP's default
+ * wire format and the only one collectors are obliged to accept. This was missed
+ * at first because the JSON exporter works perfectly against a hand-written
+ * receiver that parses JSON; only a real backend surfaces it.
+ */
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import {
   ATTR_SERVICE_NAME,
