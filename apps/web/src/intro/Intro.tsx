@@ -81,8 +81,10 @@ export function Intro({
   const [holding, setHolding] = useState(false)
   const [launching, setLaunching] = useState(false)
 
-  // Touch and pen have no arrow keys, so those devices get a press-and-hold
-  // affordance instead. Mouse users are told to use the keyboard, as asked.
+  // Touch and pen have no arrow keys, so the wording differs — but the cue is a
+  // real press-and-hold control on every device. It used to be inert decoration
+  // that named a key, which left anyone on a mouse with nothing to press except
+  // "Skip intro": the one control that throws the moment away.
   const [coarse] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
   )
@@ -179,28 +181,23 @@ export function Intro({
     }
   }, [])
 
-  const holdProps = coarse
-    ? {
-        onPointerDown: () => {
-          setHolding(true)
-          controllerRef.current?.setThrottle(true)
-        },
-        onPointerUp: () => {
-          setHolding(false)
-          controllerRef.current?.setThrottle(false)
-        },
-        onPointerCancel: () => {
-          setHolding(false)
-          controllerRef.current?.setThrottle(false)
-        },
-      }
-    : {}
+  const setThrottle = (on: boolean) => {
+    setHolding(on)
+    controllerRef.current?.setThrottle(on)
+  }
+
+  // Releasing outside the control, or having the pointer captured away, must
+  // not leave the throttle stuck on — the same failure the keyboard path guards
+  // against with window blur.
+  const holdProps = {
+    onPointerDown: () => setThrottle(true),
+    onPointerUp: () => setThrottle(false),
+    onPointerCancel: () => setThrottle(false),
+    onPointerLeave: () => setThrottle(false),
+  }
 
   return (
-    <div
-      className={`intro${launching ? ' intro--launching' : ''}${ready ? ' intro--ready' : ''}`}
-      {...holdProps}
-    >
+    <div className={`intro${launching ? ' intro--launching' : ''}${ready ? ' intro--ready' : ''}`}>
       <div className="intro__stage" ref={stageRef} aria-hidden="true" />
       <div className="intro__grade" aria-hidden="true" />
 
@@ -211,13 +208,19 @@ export function Intro({
         </div>
 
         <div className="intro__center">
+          <p className="intro__eyebrow">Rent or buy · 400 live listings</p>
           <h1 className="intro__title">Find the car. Not the listings.</h1>
           <p className="intro__sub">
-            An AI concierge that interviews you, searches the market, and explains every choice.
+            An AI concierge that interviews you, searches the market, and explains every choice
+            against what you actually said.
           </p>
 
           {ready ? (
-            <div className={`intro__cue${holding ? ' intro__cue--held' : ''}`}>
+            <button
+              type="button"
+              className={`intro__cue${holding ? ' intro__cue--held' : ''}`}
+              {...holdProps}
+            >
               {coarse ? (
                 <>
                   <span className="intro__pad" aria-hidden="true">↑</span>
@@ -226,10 +229,10 @@ export function Intro({
               ) : (
                 <>
                   <kbd className="intro__key">↑</kbd>
-                  <span className="intro__cue-text">Hold to start</span>
+                  <span className="intro__cue-text">Hold ↑, or press and hold here</span>
                 </>
               )}
-            </div>
+            </button>
           ) : (
             <div className="intro__cue intro__cue--loading">
               <span className="intro__spinner" aria-hidden="true" />
@@ -238,9 +241,16 @@ export function Intro({
           )}
         </div>
 
-        <button type="button" className="intro__skip" onClick={beginHandover}>
-          Skip intro
-        </button>
+        <div className="intro__foot">
+          <ul className="intro__proof">
+            <li>Interviews you in eleven questions</li>
+            <li>Screens every listing against your dealbreakers</li>
+            <li>Books and checks out without leaving the chat</li>
+          </ul>
+          <button type="button" className="intro__skip" onClick={beginHandover}>
+            Skip intro
+          </button>
+        </div>
       </div>
     </div>
   )

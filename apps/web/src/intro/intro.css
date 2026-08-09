@@ -68,30 +68,78 @@
 }
 
 .intro__center {
-  align-self: end;
+  align-self: center;
   justify-self: start;
-  max-width: 34ch;
+  /* A `ch` cap here resolves against the container's own 14px, not the display
+     size of the heading inside it, so the title ended up four words tall. */
+  max-width: min(560px, 46vw);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-bottom: 4vh;
+  gap: 14px;
+}
+
+.intro__eyebrow {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.7);
 }
 
 .intro__title {
   margin: 0;
-  font-size: clamp(28px, 4.2vw, 46px);
-  line-height: 1.06;
-  letter-spacing: -0.03em;
+  font-size: clamp(32px, 5vw, 58px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
   font-weight: 600;
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
 }
 
 .intro__sub {
   margin: 0;
-  max-width: 40ch;
+  max-width: 42ch;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.55;
   text-shadow: 0 1px 14px rgba(0, 0, 0, 0.6);
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.intro__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+/* Three claims the product can actually back up. The landing page was a title
+   over a large empty pane; saying what the thing does costs one row. */
+.intro__proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.intro__proof li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.7);
+}
+.intro__proof li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
 }
 
 /* ------------------------------------------------------------------- cue */
@@ -101,15 +149,25 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 15px 9px 10px;
-  border: 1px solid var(--border);
+  padding: 10px 18px 10px 11px;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: rgba(11, 12, 14, 0.55);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   align-self: flex-start;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
+.intro__cue:hover { background: rgba(20, 22, 26, 0.7); border-color: var(--accent-dim, rgba(200, 255, 61, 0.4)); }
+.intro__cue--loading { cursor: default; }
+.intro__cue:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .intro__cue--held {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-glow);
@@ -167,8 +225,7 @@
 @keyframes intro-spin { to { transform: rotate(360deg); } }
 
 .intro__skip {
-  justify-self: end;
-  align-self: end;
+  flex: none;
   padding: 7px 13px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -208,8 +265,10 @@
 }
 
 @media (max-width: 899px) {
-  .intro__center { max-width: none; padding-bottom: 8vh; }
+  .intro__center { max-width: none; align-self: end; padding-bottom: 4vh; }
   .intro__ui { padding: 18px 18px 22px; }
+  .intro__foot { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .intro__proof li:nth-child(n + 3) { display: none; }
 
   /* Portrait stacks the copy under the car, so the scrim has to come from the
      bottom — the angled one used on wide screens misses it entirely. */
