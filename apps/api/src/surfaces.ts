@@ -12,7 +12,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
-import type { Question } from './interview.js'
+import { type Question, specSheet } from './interview.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -49,48 +49,26 @@ export function initSurfaces(): A2uiMessage[] {
  * showing the spec before anything is searched.
  */
 export function buildJourneySurface(state: SessionState): A2uiMessage[] {
-  const p = state.preferences
-  const exclusions = state.criteria.filter((c) => c.kind === 'exclusion')
+  const rows = specSheet(state.preferences, state.criteria)
 
-  const rows: { label: string; value: string; filled: boolean }[] = [
-    { label: 'Rent or buy', value: p.mode === 'rent' ? 'Renting' : p.mode === 'buy' ? 'Buying' : '', filled: Boolean(p.mode) },
-    { label: 'Use case', value: p.useCase ?? '', filled: Boolean(p.useCase) },
-    { label: 'Category', value: p.category ? p.category.toUpperCase() : '', filled: Boolean(p.category) },
-    {
-      label: 'Budget',
-      value: p.budgetMax
-        ? p.mode === 'buy'
-          ? `Up to ${money(p.budgetMax)}`
-          : `Up to ${money(p.budgetMax)}/mo`
-        : '',
-      filled: Boolean(p.budgetMax),
-    },
-    { label: 'Seats', value: p.seatsMin ? `${p.seatsMin} or more` : '', filled: Boolean(p.seatsMin) },
-    { label: 'Gearbox', value: p.transmission ?? '', filled: Boolean(p.transmission) },
-    { label: 'Fuel', value: p.fuel ?? '', filled: Boolean(p.fuel) },
-    {
-      label: p.mode === 'buy' ? 'Collection' : 'Dates',
-      value: p.targetDate ? (p.returnDate ? `${p.targetDate} → ${p.returnDate}` : p.targetDate) : '',
-      filled: Boolean(p.targetDate),
-    },
-    {
-      label: 'Dealbreakers',
-      value: exclusions.length ? exclusions.map((c) => c.label).join(', ') : '',
-      filled: exclusions.length > 0,
-    },
-  ]
+  // Re-searching only means anything once a search has happened. Before that the
+  // spec is still being assembled and "Search on this" on the interview surface
+  // is the way in.
+  const canResearch = state.interview.confirmed
+  const roots = canResearch ? ['sheet', 'again'] : ['sheet']
 
   return [
     // The whole row set goes into the data model so the template fans out over
     // it and a later answer is a data patch, not a component rebuild.
     updateDataModel(SURFACES.journey, '/', {
       phase: state.phase,
-      preferences: p,
+      preferences: state.preferences,
       search: state.search ?? null,
       rows,
+      againLabel: state.interview.dirty ? 'Search again with these changes' : 'Search again',
     }),
     updateComponents(SURFACES.journey, [
-      column('root', ['sheet']),
+      column('root', roots),
       { id: 'sheet', component: 'Column', children: { componentId: 'specRow', path: '/rows' } },
       {
         id: 'specRow',
@@ -98,7 +76,37 @@ export function buildJourneySurface(state: SessionState): A2uiMessage[] {
         label: { path: 'label' },
         value: { path: 'value' },
         filled: { path: 'filled' },
+        // Everything below is what makes the row editable. A row with no
+        // questionId renders exactly as before.
+        questionId: { path: 'questionId' },
+        control: { path: 'control' },
+        options: { path: 'options' },
+        editValue: { path: 'editValue' },
+        min: { path: 'min' },
+        max: { path: 'max' },
+        step: { path: 'step' },
+        unit: { path: 'unit' },
+        // Context is resolved against the data model when the action fires, so
+        // the row writes the new value to `editValue` first and this picks it up.
+        action: {
+          event: {
+            name: 'editSpec',
+            context: { questionId: { path: 'questionId' }, value: { path: 'editValue' } },
+          },
+        },
       },
+      ...(canResearch
+        ? [
+            {
+              id: 'again',
+              component: 'Button',
+              child: 'againLabel',
+              variant: state.interview.dirty ? 'primary' : 'borderless',
+              action: { event: { name: 'searchAgain', context: {} } },
+            },
+            text('againLabel', { path: '/againLabel' }),
+          ]
+        : []),
     ]),
   ]
 }
@@ -115,7 +123,7 @@ export function buildSearchingSurface(): A2uiMessage[] {
 }
 
 /** One card's worth of data, shared by the shortlist and the tail. */
-function cardData(entry: RankedListing) {
+function cardData(entry: RankedListing, nearMiss = false) {
   const { listing, rank, score, rationale } = entry
   const rental = isRental(listing)
   return {
@@ -134,7 +142,9 @@ function cardData(entry: RankedListing) {
     price: rental ? listing.monthlyRate : listing.price,
     period: rental ? 'month' : '',
     rationale,
-    selected: rank === 1,
+    // The winner's highlight is a claim that this one is the answer. Nothing
+    // qualified, so nothing gets it.
+    selected: rank === 1 && !nearMiss,
   }
 }
 
@@ -153,12 +163,15 @@ const LEAD_COUNT = 3
  * Every card carries its rationale — that is what separates this from a listings
  * page, so it is structural, not decorative.
  */
-export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[] {
+export function buildCatalogueSurface(
+  shortlist: RankedListing[],
+  { nearMiss = false }: { nearMiss?: boolean } = {},
+): A2uiMessage[] {
   // Data-driven rather than one component per car: the card is declared once as
   // a template and fanned out over the arrays, so re-ranking is a data-model
   // patch instead of a full component rebuild.
-  const lead = shortlist.slice(0, LEAD_COUNT).map(cardData)
-  const tail = shortlist.slice(LEAD_COUNT).map(cardData)
+  const lead = shortlist.slice(0, LEAD_COUNT).map((e) => cardData(e, nearMiss))
+  const tail = shortlist.slice(LEAD_COUNT).map((e) => cardData(e, nearMiss))
 
   const roots = ['heading', 'grid']
   if (tail.length > 0) roots.push('restHeading', 'rest')
@@ -184,8 +197,19 @@ export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[]
 
   return [
     updateDataModel(SURFACES.stage, '/', {
-      headline: shortlist.length === 1 ? '1 match' : `${shortlist.length} matches, ranked`,
-      restHeadline: tail.length === 1 ? '1 more worth a look' : `${tail.length} more worth a look`,
+      // Near-misses are never called matches. The whole point of showing them is
+      // that they failed something, and a headline that says "3 matches" over
+      // three cars each captioned "misses your budget" reads as a bug.
+      headline: nearMiss
+        ? 'Nothing cleared every condition — closest first'
+        : shortlist.length === 1
+          ? '1 match'
+          : `${shortlist.length} matches, ranked`,
+      restHeadline: nearMiss
+        ? 'Further off'
+        : tail.length === 1
+          ? '1 more worth a look'
+          : `${tail.length} more worth a look`,
       cars: lead,
       rest: tail,
     }),

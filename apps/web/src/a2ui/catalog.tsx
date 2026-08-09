@@ -1,6 +1,7 @@
 import { basicCatalog, createComponentImplementation, type ReactComponentImplementation } from '@a2ui/react/v0_9'
 import { Catalog, CommonSchemas } from '@a2ui/web_core/v0_9'
 import { CURRENCY_SYMBOL } from '@car/shared'
+import { useState } from 'react'
 import { z } from 'zod'
 
 /**
@@ -175,7 +176,28 @@ export const SpecRowApi = {
     value: CommonSchemas.DynamicString.optional(),
     /** False gets the placeholder treatment — a field nobody has filled yet. */
     filled: CommonSchemas.DynamicBoolean.optional(),
+    /**
+     * Editing. A row with no `questionId` renders read-only exactly as before,
+     * so the same component still serves the car detail view's specification.
+     */
+    questionId: CommonSchemas.DynamicString.optional(),
+    /** 'chips' | 'multi' | 'slider' | 'date' | 'text'. */
+    control: CommonSchemas.DynamicString.optional(),
+    // Dynamic rather than the static array ChoicePicker declares: these rows are
+    // a templated fan-out, so each one's options arrive by path.
+    options: CommonSchemas.DynamicValue.optional(),
+    editValue: CommonSchemas.DynamicString.optional(),
+    min: CommonSchemas.DynamicNumber.optional(),
+    max: CommonSchemas.DynamicNumber.optional(),
+    step: CommonSchemas.DynamicNumber.optional(),
+    unit: CommonSchemas.DynamicString.optional(),
+    action: CommonSchemas.Action.optional(),
   }),
+}
+
+interface SpecOption {
+  label: string
+  value: string
 }
 
 /**
@@ -185,14 +207,183 @@ export const SpecRowApi = {
  * A plain column of sentences ("Budget — not set") technically carried the same
  * information, but nothing lined up, so there was no way to scan for what was
  * still missing. Pairing label and value on one row makes the gaps obvious.
+ *
+ * The value is the control rather than a button that reveals one. It already has
+ * to show the current selection, and a native select does that *and* opens on
+ * click — so the read state and the edit state are the same element, and there
+ * is no moment where the row shows a value the model no longer holds.
+ *
+ * Committing is two calls in order: `setEditValue` writes the new value into the
+ * surface data model, then `action()` dispatches. The action's context is
+ * resolved against the model at dispatch time, so it reads back what was just
+ * written. Reversing them sends the previous value.
  */
 export const SpecRow = createComponentImplementation(SpecRowApi, ({ props }) => {
+  const editable = Boolean(props.questionId) && typeof props.action === 'function'
   const filled = props.filled !== false && Boolean(props.value)
+  const control = typeof props.control === 'string' ? props.control : ''
+  const options: SpecOption[] = Array.isArray(props.options) ? (props.options as SpecOption[]) : []
+  const current = typeof props.editValue === 'string' ? props.editValue : ''
+
+  const commit = (next: string) => {
+    if (next === current) return
+    props.setEditValue?.(next)
+    props.action?.()
+  }
+
+  // Free text and the budget are typed, so they commit on blur or Enter rather
+  // than on every keystroke — one search-invalidating edit per intent, not per
+  // character.
+  const [draft, setDraft] = useState<string | null>(null)
+  const typed = draft ?? current
+  const commitTyped = () => {
+    setDraft(null)
+    commit(typed.trim())
+  }
+
+  const [openMulti, setOpenMulti] = useState(false)
+  const selected = current ? current.split(',').filter(Boolean) : []
+
+  const editor = () => {
+    switch (control) {
+      case 'chips':
+        return (
+          <select
+            className="a2ui-specrow__select"
+            value={filled ? current : ''}
+            onChange={(e) => commit(e.target.value)}
+          >
+            {/* An unanswered row must not wear the label of the option that
+                happens to mean "no constraint" — showing "Not much" against a
+                luggage question nobody asked reads as a recorded answer. */}
+            {!filled && (
+              <option value="" disabled>
+                Not set
+              </option>
+            )}
+            {/* A value the sheet holds but the option list does not would
+                otherwise select the first option and silently rewrite it. */}
+            {filled && !options.some((o) => o.value === current) && (
+              <option value={current}>{String(props.value)}</option>
+            )}
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )
+
+      // A bare number loses what the read-only row said in words — "1000" is not
+      // "Up to $1,000/mo" — so the question's own unit is carried alongside it.
+      case 'slider':
+        return (
+          <span className="a2ui-specrow__measure">
+            <input
+              className="a2ui-specrow__input"
+              type="number"
+              inputMode="numeric"
+              value={typed}
+              min={typeof props.min === 'number' ? props.min : undefined}
+              max={typeof props.max === 'number' ? props.max : undefined}
+              step={typeof props.step === 'number' ? props.step : undefined}
+              placeholder="Not set"
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitTyped}
+              onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              commitTyped()
+            }}
+            />
+            {props.unit ? <span className="a2ui-specrow__unit">{String(props.unit)}</span> : null}
+          </span>
+        )
+
+      case 'date':
+        return (
+          <input
+            className="a2ui-specrow__input"
+            type="date"
+            value={current}
+            onChange={(e) => commit(e.target.value)}
+          />
+        )
+
+      case 'text':
+        return (
+          <input
+            className="a2ui-specrow__input"
+            type="text"
+            value={typed}
+            placeholder="Not set"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitTyped}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              commitTyped()
+            }}
+          />
+        )
+
+      // No native control picks several things at once, so this is a disclosure
+      // over checkboxes. Each tick commits — there is no Done to forget.
+      case 'multi':
+        return (
+          <div className="a2ui-specrow__multi">
+            <button
+              type="button"
+              className="a2ui-specrow__disclose"
+              aria-expanded={openMulti}
+              onClick={() => setOpenMulti((v) => !v)}
+            >
+              {filled ? String(props.value) : 'None'}
+            </button>
+            {openMulti && (
+              <div className="a2ui-specrow__menu">
+                {options.map((o) => {
+                  const on = selected.includes(o.value)
+                  return (
+                    <label key={o.value} className="a2ui-specrow__check">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => {
+                          const next = on
+                            ? selected.filter((v) => v !== o.value)
+                            : [...selected.filter((v) => v !== 'none'), o.value]
+                          commit(next.join(','))
+                        }}
+                      />
+                      <span>{o.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+
+      default:
+        return <span className="a2ui-specrow__value">{filled ? props.value : 'Not set'}</span>
+    }
+  }
 
   return (
-    <div className={`a2ui-specrow${filled ? ' a2ui-specrow--filled' : ''}`}>
+    <div
+      className={
+        'a2ui-specrow' +
+        (filled ? ' a2ui-specrow--filled' : '') +
+        (editable ? ' a2ui-specrow--editable' : '')
+      }
+    >
       <span className="a2ui-specrow__label">{props.label}</span>
-      <span className="a2ui-specrow__value">{filled ? props.value : 'Not set'}</span>
+      {editable ? (
+        editor()
+      ) : (
+        <span className="a2ui-specrow__value">{filled ? props.value : 'Not set'}</span>
+      )}
     </div>
   )
 })

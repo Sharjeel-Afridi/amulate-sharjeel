@@ -577,3 +577,152 @@
 }
 .a2ui-host .a2ui-step__title { font-size: 12.5px; line-height: 1.5; color: var(--muted, #98a1ab); }
 .a2ui-host .a2ui-step__detail { display: block; font-size: 11.5px; color: var(--faint, #626b75); margin-top: 2px; }
+
+/* ==========================================================================
+   Editable spec rows.
+   ==========================================================================
+   The value doubles as the control, so it has to read as text at rest and as
+   something operable on hover — a row of visible form fields turns the sheet
+   into a settings page and buries what it actually says.
+*/
+
+.a2ui-host .a2ui-specrow--editable { padding: 7px 2px; }
+
+.a2ui-host .a2ui-specrow .a2ui-specrow__select,
+.a2ui-host .a2ui-specrow .a2ui-specrow__input,
+.a2ui-host .a2ui-specrow .a2ui-specrow__disclose {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: right;
+  color: var(--text, #f4f6f8);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 3px 8px;
+  margin: 0;
+  height: auto;
+  width: auto;
+  max-width: 62%;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+/* Unfilled rows keep the placeholder treatment the read-only row has. */
+.a2ui-host .a2ui-specrow:not(.a2ui-specrow--filled) .a2ui-specrow__select,
+.a2ui-host .a2ui-specrow:not(.a2ui-specrow--filled) .a2ui-specrow__disclose,
+.a2ui-host .a2ui-specrow .a2ui-specrow__input::placeholder {
+  color: var(--faint, #6b7480);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.a2ui-host .a2ui-specrow .a2ui-specrow__select:hover,
+.a2ui-host .a2ui-specrow .a2ui-specrow__input:hover,
+.a2ui-host .a2ui-specrow .a2ui-specrow__disclose:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.a2ui-host .a2ui-specrow .a2ui-specrow__select:focus-visible,
+.a2ui-host .a2ui-specrow .a2ui-specrow__input:focus,
+.a2ui-host .a2ui-specrow .a2ui-specrow__disclose:focus-visible {
+  outline: none;
+  background: rgba(0, 0, 0, 0.3);
+  border-color: var(--accent, #c8ff3d);
+  box-shadow: 0 0 0 3px rgba(200, 255, 61, 0.14);
+}
+
+/* The affordance: a caret that only shows up when the row is worth touching. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__select {
+  appearance: none;
+  padding-right: 20px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--faint, #6b7480) 50%),
+    linear-gradient(135deg, var(--faint, #6b7480) 50%, transparent 50%);
+  background-position: calc(100% - 11px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  text-align-last: right;
+}
+.a2ui-host .a2ui-specrow .a2ui-specrow__select:hover { background-color: rgba(255, 255, 255, 0.06); }
+
+/* The dropdown itself is OS-rendered, so its list needs explicit colours. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__select option {
+  background: var(--surface-2, #15181d);
+  color: var(--text, #f4f6f8);
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* An empty control sized to its content collapses to a few pixels, which is
+   both unreadable and too small to hit. Each gets the room its longest ordinary
+   value needs. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__select { min-width: 96px; }
+.a2ui-host .a2ui-specrow .a2ui-specrow__input { cursor: text; width: 108px; }
+.a2ui-host .a2ui-specrow .a2ui-specrow__input[type='date'] { cursor: pointer; width: 132px; }
+.a2ui-host .a2ui-specrow .a2ui-specrow__input[type='text'] { width: 62%; }
+/* Chrome's calendar glyph is near-black on this surface without it. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__input::-webkit-calendar-picker-indicator {
+  filter: invert(0.65);
+  cursor: pointer;
+}
+
+/* Budget: the figure is editable, the unit beside it is not. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__measure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.a2ui-host .a2ui-specrow .a2ui-specrow__unit {
+  font-size: 11.5px;
+  color: var(--faint, #6b7480);
+  white-space: nowrap;
+}
+
+/* Dealbreakers — several at once, so a disclosure over checkboxes. */
+.a2ui-host .a2ui-specrow .a2ui-specrow__multi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 62%;
+  min-width: 0;
+}
+.a2ui-host .a2ui-specrow .a2ui-specrow__disclose { max-width: 100%; }
+.a2ui-host .a2ui-specrow .a2ui-specrow__disclose::after {
+  content: '';
+  display: inline-block;
+  margin-left: 7px;
+  border: 3px solid transparent;
+  border-top-color: var(--faint, #6b7480);
+  transform: translateY(2px);
+}
+
+.a2ui-host .a2ui-specrow .a2ui-specrow__menu {
+  margin-top: 6px;
+  width: max-content;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px;
+  border-radius: 9px;
+  background: var(--surface-2, #15181d);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+.a2ui-host .a2ui-specrow .a2ui-specrow__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-style: normal;
+  color: var(--muted, #98a1ab);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.a2ui-host .a2ui-specrow .a2ui-specrow__check:hover { background: rgba(255, 255, 255, 0.06); }
+.a2ui-host .a2ui-specrow .a2ui-specrow__check input { accent-color: var(--accent, #c8ff3d); margin: 0; }

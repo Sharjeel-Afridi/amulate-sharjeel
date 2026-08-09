@@ -391,7 +391,9 @@ function Stage({
           <A2uiHost messages={a2ui} surfaceId="stage" onAction={onAction} onError={onError} />
         ) : (
           <>
-            <A2uiHost messages={a2ui} surfaceId="journey" onError={onError} />
+            {/* The sheet is editable, so its actions have to reach the driver
+                like every other surface's do. */}
+            <A2uiHost messages={a2ui} surfaceId="journey" onAction={onAction} onError={onError} />
             {!hasResults && (
               <p className="empty__hint" style={{ marginTop: 'var(--s5)', maxWidth: '40ch' }}>
                 Answer the questions on the left and this fills in. Nothing is searched until

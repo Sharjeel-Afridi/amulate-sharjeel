@@ -2,6 +2,7 @@ import type { Listing, Preferences } from '@car/shared'
 import type { AgentDriver, TurnContext } from './driver.js'
 import {
   advance,
+  editSpec,
   handleBookingSubmitted,
   handlePaymentConfirmed,
   recordAnswer,
@@ -90,6 +91,15 @@ export class ScriptedDriver implements AgentDriver {
       advance(ctx)
       return
     }
+
+    // Editing the spec sheet. No search — the user may be changing several
+    // things, and `searchAgain` is how they say they are done.
+    if (name === 'editSpec') {
+      editSpec(ctx, String(context.questionId ?? ''), context.value)
+      return
+    }
+
+    if (name === 'searchAgain') return this.confirmSpec(ctx)
 
     // Selecting opens the car; booking is a separate, deliberate second tap.
     if (name === 'selectCar') {

@@ -235,6 +235,16 @@ export function questionsRemaining(prefs: Preferences, answered: Set<string>): n
 /** What one answered question contributes. */
 export interface AnswerOutcome {
   patch: Preferences
+  /**
+   * Fields the answer explicitly *removes* a constraint from — "No preference"
+   * on fuel, "Doesn't matter" on mileage.
+   *
+   * Distinct from simply being absent from `patch`. During the interview the two
+   * coincide, because the field was never set; when editing an existing spec they
+   * do not, and a patch alone can only ever add or overwrite. Without this,
+   * changing fuel back to "No preference" silently kept the old value.
+   */
+  clear: (keyof Preferences)[]
   /** Raw dealbreaker values, for `dealbreakerCriteria`. Empty for every other question. */
   dealbreakers: string[]
 }
@@ -251,6 +261,7 @@ export function answerToPreferences(questionId: string, raw: unknown): AnswerOut
   const values = (Array.isArray(raw) ? raw.map(String) : [String(raw ?? '')]).map((v) => v.trim())
   const first = values[0] ?? ''
   const patch: Preferences = {}
+  const clear: (keyof Preferences)[] = []
   const dealbreakers: string[] = []
 
   switch (questionId) {
@@ -264,7 +275,8 @@ export function answerToPreferences(questionId: string, raw: unknown): AnswerOut
       patch.seatsMin = Number(first) || undefined
       break
     case 'category':
-      if (first && first !== 'unsure') patch.category = first as Category
+      if (first === 'unsure') clear.push('category')
+      else if (first) patch.category = first as Category
       break
     case 'budget':
     case 'budgetBuy':
@@ -277,16 +289,20 @@ export function answerToPreferences(questionId: string, raw: unknown): AnswerOut
       if (first) patch.returnDate = first.slice(0, 10)
       break
     case 'luggage':
-      patch.bootLitresMin = Number(first) || undefined
+      if (Number(first) > 0) patch.bootLitresMin = Number(first)
+      else clear.push('bootLitresMin')
       break
     case 'fuel':
-      if (first && first !== 'any') patch.fuel = first as FuelType
+      if (first === 'any') clear.push('fuel')
+      else if (first) patch.fuel = first as FuelType
       break
     case 'transmission':
-      if (first && first !== 'any') patch.transmission = first as Transmission
+      if (first === 'any') clear.push('transmission')
+      else if (first) patch.transmission = first as Transmission
       break
     case 'mileage':
-      patch.maxMileageKm = Number(first) || undefined
+      if (Number(first) > 0) patch.maxMileageKm = Number(first)
+      else clear.push('maxMileageKm')
       break
     case 'dealbreakers':
       dealbreakers.push(...values.filter((v) => v && v !== 'none'))
@@ -300,7 +316,7 @@ export function answerToPreferences(questionId: string, raw: unknown): AnswerOut
     if (patch[key] === undefined) delete patch[key]
   }
 
-  return { patch, dealbreakers }
+  return { patch, clear, dealbreakers }
 }
 
 /**
@@ -398,6 +414,150 @@ export function requirementCriteria(prefs: Preferences, strictBudget: boolean): 
   }
 
   return out
+}
+
+export const questionById = (id: string): Question | undefined => QUESTIONS.find((q) => q.id === id)
+
+/**
+ * One line of the spec sheet: what it says, and what changes it.
+ *
+ * The edit metadata rides along with the display text rather than living in the
+ * surface builder, because both are answers to the same question — "what does
+ * this row mean" — and splitting them is how the sheet and the control that
+ * edits it drift apart.
+ */
+export interface SpecSheetRow {
+  label: string
+  /** Display text. Empty when nothing has been recorded. */
+  value: string
+  filled: boolean
+  /** Question that edits this row. Empty for rows nothing can change. */
+  questionId: string
+  /** Control kind, or '' for read-only. `multi` carries comma-joined values. */
+  control: string
+  options: { label: string; value: string }[]
+  /** Current raw value, in the vocabulary the control speaks. */
+  editValue: string
+  min: number
+  max: number
+  step: number
+  unit: string
+}
+
+/** The label an option list gives a raw value, falling back to the value. */
+function optionLabel(questionId: string, value: string): string {
+  return questionById(questionId)?.options?.find((o) => o.value === value)?.label ?? value
+}
+
+/**
+ * The whole spec, as editable rows.
+ *
+ * Every field the interview can ask about appears, whether or not it was
+ * answered — a sheet that hides the questions you skipped gives you no way to
+ * fill them in later, which was the original dead end: once the search came back
+ * empty there was nothing on screen that could change the outcome.
+ */
+export function specSheet(prefs: Preferences, criteria: Criterion[]): SpecSheetRow[] {
+  const renting = prefs.mode !== 'buy'
+  const exclusions = criteria.filter((c) => c.kind === 'exclusion')
+
+  const row = (
+    label: string,
+    questionId: string,
+    value: string,
+    editValue: string,
+    filled = Boolean(value),
+  ): SpecSheetRow => {
+    const q = questionById(questionId)
+    return {
+      label,
+      value,
+      filled,
+      questionId: q ? questionId : '',
+      control: q?.control ?? '',
+      options: q?.options ?? [],
+      editValue,
+      min: q?.min ?? 0,
+      max: q?.max ?? 0,
+      step: q?.step ?? 1,
+      unit: q?.unit ?? '',
+    }
+  }
+
+  const budgetQuestion = renting ? 'budget' : 'budgetBuy'
+  const rows: SpecSheetRow[] = [
+    row(
+      'Rent or buy',
+      'mode',
+      prefs.mode === 'rent' ? 'Renting' : prefs.mode === 'buy' ? 'Buying' : '',
+      prefs.mode ?? '',
+    ),
+    row('Use case', 'useCase', prefs.useCase ?? '', prefs.useCase ?? ''),
+    row(
+      'Category',
+      'category',
+      prefs.category ? CATEGORY_LABELS[prefs.category] : '',
+      prefs.category ?? 'unsure',
+    ),
+    row(
+      'Budget',
+      budgetQuestion,
+      prefs.budgetMax ? `Up to ${money(prefs.budgetMax)}${renting ? '/mo' : ''}` : '',
+      prefs.budgetMax ? String(prefs.budgetMax) : '',
+    ),
+    row(
+      'Seats',
+      'passengers',
+      prefs.seatsMin ? `${prefs.seatsMin} or more` : '',
+      prefs.seatsMin ? String(prefs.seatsMin) : '',
+    ),
+    row(
+      'Luggage',
+      'luggage',
+      prefs.bootLitresMin ? optionLabel('luggage', String(prefs.bootLitresMin)) : '',
+      String(prefs.bootLitresMin ?? 0),
+    ),
+    row('Gearbox', 'transmission', prefs.transmission ?? '', prefs.transmission ?? 'any'),
+    row('Fuel', 'fuel', prefs.fuel ?? '', prefs.fuel ?? 'any'),
+  ]
+
+  if (!renting) {
+    rows.push(
+      row(
+        'Mileage',
+        'mileage',
+        prefs.maxMileageKm ? optionLabel('mileage', String(prefs.maxMileageKm)) : '',
+        String(prefs.maxMileageKm ?? 0),
+      ),
+    )
+  }
+
+  // Split rather than shown as "from → until": a combined row reads well but
+  // there is no sensible single control that edits both ends of it.
+  rows.push(
+    row(renting ? 'From' : 'Collection', 'targetDate', prefs.targetDate ?? '', prefs.targetDate ?? ''),
+  )
+  if (renting) {
+    rows.push(row('Until', 'returnDate', prefs.returnDate ?? '', prefs.returnDate ?? ''))
+  }
+
+  // Only the exclusions this question actually produces. `requirementCriteria`
+  // also emits the budget as an exclusion when the user called it strict, and
+  // that one is owned by the budget row — listing it here would offer to remove
+  // a dealbreaker the control cannot express. Strict budget itself lives in
+  // notes rather than as a criterion, so it is read back from there.
+  const dealbreakerValues = new Set((questionById('dealbreakers')?.options ?? []).map((o) => o.value))
+  const chosen = exclusions.filter((c) => dealbreakerValues.has(c.id))
+  const labels = chosen.map((c) => c.label)
+  const selected = chosen.map((c) => c.id)
+  if ((prefs.notes ?? []).includes('strict-budget')) {
+    labels.push('Nothing above my budget')
+    selected.push('strict-budget')
+  }
+
+  rows.push(row('Dealbreakers', 'dealbreakers', labels.join(', '), selected.join(',')))
+
+  return rows
 }
 
 /** A one-line spec the agent states back before searching. */

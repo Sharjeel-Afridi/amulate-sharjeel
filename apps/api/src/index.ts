@@ -91,6 +91,11 @@ function makeContext(state: SessionState): TurnContext {
         }
       })
     },
+    clearPreferences: (fields) => {
+      update(id, (s) => {
+        for (const f of fields) delete (s.preferences as Record<string, unknown>)[f]
+      })
+    },
     setShortlist: (shortlist: RankedListing[]) => {
       update(id, (s) => {
         s.shortlist = shortlist

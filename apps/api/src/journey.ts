@@ -1,6 +1,7 @@
 import {
   type Criterion,
   type Listing,
+  type ListingAssessment,
   type Preferences,
   type RankedListing,
   missingFields,
@@ -20,6 +21,7 @@ import {
   dealbreakerCriteria,
   describeSpecFull,
   nextQuestion,
+  questionById,
   questionsRemaining,
   requirementCriteria,
 } from './interview.js'
@@ -47,23 +49,97 @@ import { rank } from './ranking.js'
 
 /** Records one answered question and closes it out. */
 export function recordAnswer(ctx: TurnContext, questionId: string, raw: unknown): void {
-  const { patch, dealbreakers } = answerToPreferences(questionId, raw)
-
-  if (Object.keys(patch).length > 0) ctx.patchPreferences(patch)
-
-  if (dealbreakers.length > 0) {
-    ctx.setCriteria([...ctx.state.criteria, ...dealbreakerCriteria(dealbreakers)])
-    // Not an exclusion in its own right — it changes how the budget requirement
-    // is built when the spec is assembled.
-    if (dealbreakers.includes('strict-budget')) {
-      ctx.patchPreferences({ notes: [...(ctx.state.preferences.notes ?? []), 'strict-budget'] })
-    }
-  }
+  applyAnswer(ctx, questionId, raw)
 
   ctx.patchInterview({
     answered: [...ctx.state.interview.answered, questionId],
     pending: undefined,
   })
+}
+
+/**
+ * Writes one answer into preferences and criteria.
+ *
+ * Shared by the interview and by editing an already-assembled spec, so that a
+ * value changed on the sheet means exactly what the same value meant when it was
+ * first asked — one mapping, not two that drift.
+ */
+function applyAnswer(ctx: TurnContext, questionId: string, raw: unknown): void {
+  const { patch, clear, dealbreakers } = answerToPreferences(questionId, raw)
+
+  if (Object.keys(patch).length > 0) ctx.patchPreferences(patch)
+  if (clear.length > 0) ctx.clearPreferences(clear)
+
+  if (questionId === 'dealbreakers') {
+    // Replace rather than append. Appending is right the first time and wrong
+    // every time after: unticking a dealbreaker on the sheet has to actually
+    // remove it, and re-answering would otherwise only ever add.
+    const kept = ctx.state.criteria.filter((c) => c.kind !== 'exclusion')
+    ctx.setCriteria([...kept, ...dealbreakerCriteria(dealbreakers)])
+
+    // Not an exclusion in its own right — it changes how the budget requirement
+    // is built when the spec is assembled.
+    const notes = (ctx.state.preferences.notes ?? []).filter((n) => n !== 'strict-budget')
+    if (dealbreakers.includes('strict-budget')) notes.push('strict-budget')
+    ctx.patchPreferences({ notes })
+  }
+}
+
+/**
+ * A spec row was changed after the fact.
+ *
+ * Deliberately does not re-search. Someone correcting a bad result usually
+ * changes more than one thing, and re-running on each edit would spend four
+ * searches to show the user only the last one — so the sheet goes amber and the
+ * search is theirs to trigger.
+ */
+export function editSpec(ctx: TurnContext, questionId: string, raw: unknown): void {
+  const question = questionById(questionId)
+  if (!question) return
+
+  // The sheet carries multi-selects as one comma-joined string, because a row's
+  // value is a single bound field. Split it back into the array the answer
+  // mapping expects.
+  const value =
+    question.control === 'multi'
+      ? String(raw ?? '')
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+      : raw
+
+  applyAnswer(ctx, questionId, value)
+
+  // Answering by editing still counts as answering — otherwise a field filled
+  // here for the first time leaves the interview believing it is unasked.
+  const answered = ctx.state.interview.answered
+  if (!answered.includes(questionId)) ctx.patchInterview({ answered: [...answered, questionId] })
+
+  rebuildCriteria(ctx)
+  ctx.patchInterview({ dirty: true })
+  ctx.a2ui(buildJourneySurface(ctx.state))
+}
+
+/**
+ * Recomputes the derived half of the spec from current preferences.
+ *
+ * Dealbreaker exclusions are kept as-is — they come from the dealbreaker answer
+ * and are not derivable from preferences — while everything preference-derived
+ * is rebuilt, so an edited budget or seat count reaches what actually screens
+ * the catalogue.
+ *
+ * The id filter is what keeps this idempotent. A strict budget is emitted by
+ * `requirementCriteria` as an *exclusion*, so keeping "every exclusion" and then
+ * appending the rebuilt set would add a second copy of it on each pass.
+ */
+const DERIVED_IDS = new Set(['category', 'seats', 'boot', 'budget', 'mileage'])
+
+function rebuildCriteria(ctx: TurnContext): void {
+  const strict = (ctx.state.preferences.notes ?? []).includes('strict-budget')
+  ctx.setCriteria([
+    ...ctx.state.criteria.filter((c) => c.kind === 'exclusion' && !DERIVED_IDS.has(c.id)),
+    ...requirementCriteria(ctx.state.preferences, strict),
+  ])
 }
 
 /** Ask the next question, or close the interview and present the spec. */
@@ -96,12 +172,8 @@ export function advance(ctx: TurnContext): void {
  * before anything is searched.
  */
 export function showSpec(ctx: TurnContext): void {
-  const strict = (ctx.state.preferences.notes ?? []).includes('strict-budget')
-  const criteria: Criterion[] = [
-    ...ctx.state.criteria.filter((c) => c.kind === 'exclusion'),
-    ...requirementCriteria(ctx.state.preferences, strict),
-  ]
-  ctx.setCriteria(criteria)
+  rebuildCriteria(ctx)
+  const criteria = ctx.state.criteria
 
   const gaps = missingFields(ctx.state.preferences)
   if (gaps.length > 0) ctx.step('Spec has gaps', `no ${gaps.join(', ')} — searching without ${gaps.length === 1 ? 'it' : 'them'}`)
@@ -145,6 +217,48 @@ export const scorerRanker: Ranker = async (candidates, prefs) => ({
   shortlist: rank(candidates, prefs).slice(0, 8),
   rankedBy: 'scorer',
 })
+
+/** How many near-misses are worth offering when nothing qualifies. */
+const NEAR_MISS_COUNT = 6
+
+/**
+ * The cars that came closest, ordered by how little they miss.
+ *
+ * Ordered by number of failed conditions first and score second: a car that
+ * fails one condition is a better thing to offer than one that fails three,
+ * however well the second scores on everything else. Each rationale names the
+ * conditions and the evidence, so the list doubles as the argument for which
+ * constraint is worth relaxing.
+ */
+function nearMisses(ruledOut: ListingAssessment[], prefs: Preferences): RankedListing[] {
+  if (ruledOut.length === 0) return []
+
+  const misses = new Map<string, { count: number; detail: string }>()
+  for (const a of ruledOut) {
+    const failed = a.verdicts.filter((v) => !v.passed && v.criterion.kind !== 'preference')
+    misses.set(a.listing.id, {
+      count: failed.length,
+      detail: failed.map((v) => `${v.criterion.label} (${v.evidence})`).join(' · '),
+    })
+  }
+
+  return rank(
+    ruledOut.map((a) => a.listing),
+    prefs,
+  )
+    .sort((a, b) => {
+      const byMiss = (misses.get(a.listing.id)?.count ?? 0) - (misses.get(b.listing.id)?.count ?? 0)
+      return byMiss !== 0 ? byMiss : b.score - a.score
+    })
+    .slice(0, NEAR_MISS_COUNT)
+    // Re-ranked after the re-sort: leaving the scorer's ordinals would number
+    // the list 4, 1, 7 against the order it is actually displayed in.
+    .map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      rationale: `Misses ${misses.get(r.listing.id)?.detail ?? 'one of your conditions'}`,
+    }))
+}
 
 /**
  * Search, screen, rank and render.
@@ -196,12 +310,32 @@ export async function runResearch(
     : null
 
   if (qualified.length === 0) {
+    // An empty stage is the one outcome that gives the user nothing to act on —
+    // no cars to judge, and no evidence about which condition to trade away. So
+    // the closest near-misses are shown instead, each labelled with exactly what
+    // it fails, and the spec sheet stays editable beside them.
+    const near = nearMisses(ruledOut, prefs)
+    ctx.setShortlist(near)
     ctx.setPhase('recommend')
+    ctx.patchInterview({ dirty: false })
+    // The sheet gains its "Search again" button the moment a search has
+    // happened, so it has to be rebuilt here — this is exactly the run where
+    // the user most needs the way back.
+    ctx.a2ui(buildJourneySurface(ctx.state))
+    ctx.step(
+      'Nothing cleared every condition',
+      near.length ? `Showing the ${near.length} closest, with what each one misses` : undefined,
+    )
+    if (near.length > 0) ctx.a2ui(buildCatalogueSurface(near, { nearMiss: true }))
+
     if (narrate) {
+      const lead = binding
+        ? `Nothing clears every condition — "${binding.label}" is the binding one, ruling out ${binding.eliminated} of ${result.listings.length}.`
+        : 'Nothing clears every condition.'
       ctx.say(
-        binding
-          ? `Nothing clears every condition. "${binding.label}" is the binding one — it ruled out ${binding.eliminated} of ${result.listings.length}. Want me to relax it?`
-          : 'Nothing matched. Try widening the budget or the category.',
+        near.length
+          ? `${lead} Here are the ${near.length} closest anyway, each marked with what it misses. Change anything on the spec sheet and hit Search again.`
+          : `${lead} Try widening the budget or the category on the spec sheet.`,
       )
     }
     return { qualified: 0, ruledOut: ruledOut.length, bindingConstraint: binding, top: [] }
@@ -215,6 +349,8 @@ export async function runResearch(
 
   ctx.setShortlist(shortlist)
   ctx.setPhase('recommend')
+  ctx.patchInterview({ dirty: false })
+  ctx.a2ui(buildJourneySurface(ctx.state))
   ctx.step(
     rankedBy === 'model'
       ? 'Ranked by the agent against your spec'

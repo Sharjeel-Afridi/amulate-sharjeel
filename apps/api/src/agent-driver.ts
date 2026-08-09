@@ -9,6 +9,7 @@ import type { AgentDriver, TurnContext } from './driver.js'
 import {
   type Ranker,
   advance,
+  editSpec,
   handleBookingSubmitted,
   handlePaymentConfirmed,
   recordAnswer,
@@ -376,6 +377,19 @@ export class LlmAgentDriver implements AgentDriver {
     if (name === 'answerQuestion') {
       recordAnswer(ctx, String(context.questionId ?? ''), context.value)
       advance(ctx)
+      return
+    }
+
+    // Editing the spec sheet. Deterministic like every other control: the value
+    // came from a control the question plan constrained, so there is nothing for
+    // a model to resolve.
+    if (name === 'editSpec') {
+      editSpec(ctx, String(context.questionId ?? ''), context.value)
+      return
+    }
+
+    if (name === 'searchAgain') {
+      await runResearch(ctx, { ranker: this.ranker })
       return
     }
 

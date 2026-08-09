@@ -44,6 +44,8 @@ export interface TurnContext {
   mcpApp(toolName: string, html: string): void
   setPhase(phase: Phase): void
   patchPreferences(patch: Preferences): void
+  /** Drop constraints entirely. A patch can only add or overwrite. */
+  clearPreferences(fields: (keyof Preferences)[]): void
   setShortlist(shortlist: RankedListing[]): void
   setSearchSummary(summary: SessionState['search']): void
   patchInterview(patch: Partial<SessionState['interview']>): void

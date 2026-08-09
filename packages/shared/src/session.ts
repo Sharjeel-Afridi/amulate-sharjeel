@@ -66,6 +66,13 @@ export interface InterviewState {
   pending?: string
   complete: boolean
   confirmed: boolean
+  /**
+   * The spec has been edited since the last search, so what is on the stage no
+   * longer answers what is on the sheet. Drives the "Search again" affordance —
+   * an edit does not re-search on its own, because changing four fields would
+   * otherwise fire four searches and leave the user watching the last one win.
+   */
+  dirty: boolean
 }
 
 export interface Booking {
@@ -118,7 +125,7 @@ export function createSessionState(sessionId: string, mode: DriverMode = 'script
     sessionId,
     mode,
     phase: 'interview',
-    interview: { answered: [], complete: false, confirmed: false },
+    interview: { answered: [], complete: false, confirmed: false, dirty: false },
     preferences: {},
     criteria: [],
     shortlist: [],
