@@ -5,6 +5,7 @@ import {
   type Preferences,
   type RankedListing,
   isRental,
+  money,
 } from '@car/shared'
 import { z } from 'zod'
 import { withRateLimitRetry, withTimeout } from './llm.js'
@@ -103,8 +104,11 @@ matters relative to the budget they gave, not in the abstract.
 - One sentence. Two at the very most.
 - It MUST cite something they actually stated, and give the specific number from
   that car's line that meets it. Good: "500 L boot, 50 L over the 450 L you asked
-  for." "EUR 305 a month, EUR 95 inside your EUR 400." "37,275 km, well under
+  for." "$305 a month, $95 inside your $400." "37,275 km, well under
   your 80,000 limit."
+- Name a car the way its owner would — "the Toyota RAV4". The id at the start of
+  each line is a key for the listingId field and never something to say out
+  loud; quoting it at the user reads as the software leaking.
 - Generic filler is a failure. Never write "great choice", "perfect for you",
   "excellent option" or anything else that would fit any car on the list.
 - Never state a fact that is not on that car's line. Do not invent trim levels,
@@ -114,7 +118,8 @@ matters relative to the budget they gave, not in the abstract.
 ## summary
 
 One or two sentences to say out loud about the TOP PICK: which car it is and why
-it wins, in their terms. No preamble, no "here are your results".
+it wins, in their terms. Name it by brand and model — never by its id. No
+preamble, no "here are your results".
 
 Do NOT state how many cars qualified or were ruled out. Those counts are added
 for you, and a miscounted total in the first sentence undermines everything
@@ -135,18 +140,17 @@ function describeCandidate(l: Listing): string {
     `${l.co2} g/km CO2 | ${l.location} | rated ${l.rating} from ${l.reviewCount} reviews`
 
   return isRental(l)
-    ? `${common} | EUR ${l.monthlyRate}/month | EUR ${l.dailyRate}/day | ` +
+    ? `${common} | ${money(l.monthlyRate)}/month | ${money(l.dailyRate)}/day | ` +
         `${l.freeKmPerDay >= 9999 ? 'unlimited km' : `${l.freeKmPerDay} free km/day`} | ` +
-        `minimum ${l.minRentalDays} days | EUR ${l.excess} excess | ` +
+        `minimum ${l.minRentalDays} days | ${money(l.excess)} excess | ` +
         `${l.instantBook ? 'instant book' : 'request to book'} | via ${l.provider}`
-    : `${common} | EUR ${l.price} | ${l.mileageKm} km | ${l.previousOwners} previous owners | ` +
-        `${l.warrantyMonths} months warranty | EUR ${l.financeMonthly}/month on finance | from ${l.dealer}`
+    : `${common} | ${money(l.price)} | ${l.mileageKm} km | ${l.previousOwners} previous owners | ` +
+        `${l.warrantyMonths} months warranty | ${money(l.financeMonthly)}/month on finance | from ${l.dealer}`
 }
 
 /** The spec, phrased so the model can quote it back rather than paraphrase it. */
 function describeSpec(prefs: Preferences, criteria: Criterion[]): string {
   const lines: string[] = []
-  const money = (n: number) => `EUR ${n.toLocaleString('en-IE')}`
 
   lines.push(prefs.mode === 'buy' ? 'They want to BUY a car.' : 'They want to RENT a car.')
   if (prefs.useCase) lines.push(`What for, in their words: "${prefs.useCase}"`)
