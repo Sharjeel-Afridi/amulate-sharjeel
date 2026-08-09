@@ -191,6 +191,8 @@ export const SpecRowApi = {
     max: CommonSchemas.DynamicNumber.optional(),
     step: CommonSchemas.DynamicNumber.optional(),
     unit: CommonSchemas.DynamicString.optional(),
+    /** Row wants the full width of a multi-column form. Ignored elsewhere. */
+    wide: CommonSchemas.DynamicBoolean.optional(),
     action: CommonSchemas.Action.optional(),
   }),
 }
@@ -375,7 +377,8 @@ export const SpecRow = createComponentImplementation(SpecRowApi, ({ props }) => 
       className={
         'a2ui-specrow' +
         (filled ? ' a2ui-specrow--filled' : '') +
-        (editable ? ' a2ui-specrow--editable' : '')
+        (editable ? ' a2ui-specrow--editable' : '') +
+        (props.wide ? ' a2ui-specrow--wide' : '')
       }
     >
       <span className="a2ui-specrow__label">{props.label}</span>

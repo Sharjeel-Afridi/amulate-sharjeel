@@ -590,6 +590,12 @@ export function App() {
   // dates, extras and a card form does not. Same centred column, more of it.
   const wide = phase === 'book' || phase === 'done'
 
+  // The interview is the one screen that is genuinely a form — eleven fields
+  // laid out as a grid rather than a paragraph — so it gets its own width. At
+  // the prose measure the fields stacked one per line and the Search button sat
+  // two screens below the first question.
+  const interviewing = phase === 'interview'
+
   const [specOpen, setSpecOpen] = useState(false)
 
   return (
@@ -604,7 +610,11 @@ export function App() {
         // owns the screen — ↑ is the only control that exists at that point.
         inert={entry === 'intro'}
       >
-        <main className={`cockpit cockpit--${view}${wide ? ' cockpit--wide' : ''}`}>
+        <main
+          className={`cockpit cockpit--${view}${wide ? ' cockpit--wide' : ''}${
+            interviewing ? ' cockpit--interview' : ''
+          }`}
+        >
           <header className="topbar">
             <div className="brand">
               <span className="brand__mark" aria-hidden="true">C</span>

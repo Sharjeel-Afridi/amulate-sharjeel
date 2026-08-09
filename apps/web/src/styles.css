@@ -155,6 +155,15 @@ body::before {
 
 .cockpit--wide .panel--chat { max-width: 800px; }
 
+/* The interview is a form, not a paragraph. At the prose measure its eleven
+   fields could only stack one per line, which put the Search button two screens
+   under the first question and left two thirds of a 1440px window empty. */
+.cockpit--interview .panel--chat { max-width: 1000px; }
+
+/* The agent's own sentences stay at a readable measure inside that wider
+   column — the extra width is for the fields, not for the prose. */
+.cockpit--interview .msg:not(.msg--ask) { max-width: 68ch; }
+
 .panel__head {
   display: flex;
   align-items: center;

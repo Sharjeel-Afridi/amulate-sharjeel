@@ -454,7 +454,26 @@ export interface SpecSheetRow {
   max: number
   step: number
   unit: string
+  /**
+   * Wants the full width of a multi-column form.
+   *
+   * The interview lays the sheet out as a grid of fields, two to a line. Most
+   * answers are one value off a short list and pair up happily; a sentence and a
+   * list of dealbreakers do not, and clipping either is how the form loses what
+   * the user actually said.
+   */
+  wide: boolean
 }
+
+/**
+ * Answers that take the whole line rather than half of one.
+ *
+ * Only the dealbreakers. Both modes emit exactly ten other rows, so one
+ * full-width row at the end leaves five clean pairs above it and no orphan
+ * half-row anywhere in the grid — which is what a second wide row would create,
+ * since a spanning row cannot sit beside anything.
+ */
+const WIDE_ROWS = new Set(['dealbreakers'])
 
 /** The label an option list gives a raw value, falling back to the value. */
 function optionLabel(questionId: string, value: string): string {
@@ -493,6 +512,7 @@ export function specSheet(prefs: Preferences, criteria: Criterion[]): SpecSheetR
       max: q?.max ?? 0,
       step: q?.step ?? 1,
       unit: q?.unit ?? '',
+      wide: WIDE_ROWS.has(questionId),
     }
   }
 

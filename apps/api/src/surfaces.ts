@@ -448,6 +448,9 @@ export function buildInterviewFormSurface(state: SessionState): A2uiMessage[] {
         max: { path: 'max' },
         step: { path: 'step' },
         unit: { path: 'unit' },
+        // Only the form is a grid, so only the form asks for the span. The
+        // drawer's sheet is one narrow column and ignores it.
+        wide: { path: 'wide' },
         // Same contract as the drawer: the row writes its new value into the
         // model first, and the action reads it back at dispatch time.
         action: {
