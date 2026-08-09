@@ -370,9 +370,20 @@ export async function runResearch(
     relaxed: result.relaxed,
   })
 
+  // Lead with what was actually searched, not with what survived the category
+  // filter. The old label opened on the post-filter count, so a thin category
+  // reported "Screened 10 candidates" and made a 290-listing marketplace read
+  // as ten cars — the search had scanned the whole pool to arrive at those ten.
+  // The narrowing is a step worth naming, not the headline.
+  const narrowing = [
+    prefs.category ? `${result.matched} in your category` : undefined,
+    result.listings.length < result.matched ? `${result.listings.length} screened in detail` : undefined,
+    ...attribution.map((a) => `${a.criterion.label} removed ${a.eliminated}`),
+  ].filter(Boolean)
+
   ctx.step(
-    `Screened ${result.listings.length} candidates → ${qualified.length} qualify`,
-    attribution.map((a) => `${a.criterion.label} removed ${a.eliminated}`).join(' · ') || 'nothing excluded',
+    `Scanned ${result.totalScanned} ${prefs.mode === 'buy' ? 'cars for sale' : 'rentals'} → ${qualified.length} qualify`,
+    narrowing.length > 0 ? narrowing.join(' · ') : 'nothing excluded',
   )
 
   const binding = attribution[0]
