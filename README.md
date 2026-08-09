@@ -8,6 +8,10 @@ the chat.
 
 Built for the Amulate hackathon.
 
+![The landing gate — a BMW M4 rendered in WebGL under the headline "Stop browsing.
+Start driving.", with a live speed and RPM readout, the prompt to hold the up
+arrow to ignite, and the marketplace size shown as 290 live listings.](docs/intro.png)
+
 ---
 
 ## Running it
@@ -33,20 +37,41 @@ npm run dev
 That starts all three services: the MCP marketplace on `:8081`, the API on
 `:8080`, and the web app on `:5173`.
 
+### The landing intro
+
+The first thing you see is a parked BMW M4 in WebGL, one instruction and one
+key. **Hold ↑** — or press and hold the on-screen control — and the car pulls
+away; the moment it actually moves the cockpit crossfades in over the top.
+**Space** revs it in neutral, there is a live HUD on the telemetry, engine audio
+you can mute, and a **Skip intro** button for anyone who would rather not.
+Nothing per-frame touches React state — the scene drives the HUD, the launch
+ring and the audio through refs and direct DOM writes.
+
+It is decoration, so **every reason to skip it wins**: `prefers-reduced-motion`,
+no WebGL, or having already seen it in this tab. `?intro=0` skips it outright and
+`?intro=1` forces a replay for a demo. Once the handover ends the component
+unmounts and takes its WebGL and audio contexts with it, so it costs nothing for
+the rest of the session. The cockpit renders from the first frame regardless —
+it opens the session and the SSE stream while the intro is still on screen, so
+the agent has already said hello by the time anyone sees it.
+
+
 ### Scripted mode and agent mode
 
-**There is a toggle in the top bar.** Both drivers are loaded at boot and each
-session picks one, so switching is a click — mid-conversation is fine, and
-everything gathered so far carries across. If a free-tier provider starts
-throttling in the middle of a demo, that is the recovery: no restart, no lost
-state.
+**The toggle is pinned to the footer of the *Your spec* drawer**, open from the
+top bar. Both drivers are loaded at boot and each session picks one, so
+switching is a click — mid-conversation is fine, and everything gathered so far
+carries across. If a free-tier provider starts throttling in the middle of a
+demo, that is the recovery: no restart, no lost state.
 
 Flipping to **Scripted** also turns on a guided highlight: every control the
 deterministic driver handles gets a ring, including the primary button inside
 the booking widget's sandboxed iframe. Whoever is presenting can see the path
-without having read `scripted-driver.ts`. Typing still works in scripted mode,
-but it is pattern-matched rather than understood, so the highlighted controls
-are the reliable route.
+without having read `scripted-driver.ts`. The banner that announces scripted
+mode links straight to the switch, so the recovery is never something you have
+to go looking for. Typing still works in scripted mode, but it is
+pattern-matched rather than understood, so the highlighted controls are the
+reliable route.
 
 The environment sets the **default** a new session starts in:
 
@@ -84,9 +109,11 @@ itself to it so the test never spends a rate-limited quota.
 
 ## What it does
 
-1. **Interviews you** — eleven questions, asked one at a time, each rendered
-   with the right control inline in the chat (chips, slider, date picker,
-   multi-select). Free text is accepted at any point and overrides the controls.
+1. **Interviews you** — eleven questions laid out as one wide two-column form,
+   each with the control the answer deserves (chips, slider, date picker,
+   multi-select). The whole spec is visible and editable at once rather than
+   arriving a question at a time. Free text is accepted at any point and
+   overrides the controls.
 2. **Builds a spec** — your answers become checkable criteria, shown back for
    approval. Nothing is searched until you confirm.
 3. **Screens and ranks** — hard criteria decide *whether* a car qualifies, soft
@@ -124,7 +151,7 @@ web (React 19 + Vite)          api (Express)                     mcp-marketplace
 ├─ chat + composer             ├─ agent loop / phase machine     ├─ search_listings
 ├─ A2UI renderer      ◀─ SSE ──┤ SessionState (source of truth)  ├─ get_listing
 ├─ MCP Apps host               └─ iframe tool-call proxy    MCP ─┤ check_availability
-└─ journey rail                                                  ├─ ui:// booking-form
+└─ journey bar + spec drawer                                     ├─ ui:// booking-form
      :5173                            :8080                      └─ ui:// checkout
                                                                        :8081
 ```
@@ -134,10 +161,11 @@ web (React 19 + Vite)          api (Express)                     mcp-marketplace
 Each is used for what it is actually good at.
 
 **[A2UI](https://a2ui.org)** drives the surfaces that change every turn — the
-journey rail, the interview controls, the ranked catalogue. Declarative JSON
+interview form, the editable spec sheet, the ranked catalogue. Declarative JSON
 streamed from the agent, rendered as native components. Structured surfaces come
 from typed server-side builders; the model authors only where the layout genuinely
-depends on the content.
+depends on the content. The phase stepper is the exception and stays native app
+chrome: it is the one thing that must render before any message arrives.
 
 A **custom catalog** (`CarCard`, `MatchScore`, `PriceBadge`, `ReasoningStep`)
 merges with the standard component set. A surface resolves exactly one catalog by
@@ -178,9 +206,9 @@ deterministic fallback, and every structured surface is built server-side:
 ## Marketplace data
 
 No real dealership integrations and no real payments. The bundled marketplace is
-a snapshot of **45 real scraped offers** from sixt.com — real models, real day
+a snapshot of **145 real scraped offers** from sixt.com — real models, real day
 rates, real photographs — each exposed as both a rental and a purchase, giving
-**90 listings across 7 categories and 10 brands**. It is served from a fixed
+**290 listings across 10 categories and 33 brands**. It is served from a fixed
 JSON file, so every run and every reviewer sees identical data.
 
 A generated catalogue is not used any more. Loading real inventory is what makes
@@ -210,9 +238,12 @@ lists the tools and `ui://` resources, and exercises the whole booking path.
 
 ## Observability and evals
 
-Off by default. Set `OTEL_BACKEND` and traces go to Langfuse or Arize Phoenix over
-OTLP; leave it unset and nothing is registered at all — no exporter, no flush
-loop, no behaviour change. `GET /api/health` reports which.
+Off by default. Set `OTEL_BACKEND` and traces go to Langfuse or Arize Phoenix as
+**OTLP protobuf** — the default wire format and the only one collectors are
+obliged to accept. The JSON exporter every example reaches for works fine against
+a hand-written receiver and gets a flat 415 from Phoenix. Leave `OTEL_BACKEND`
+unset and nothing is registered at all — no exporter, no flush loop, no behaviour
+change. `GET /api/health` reports which.
 
 ```bash
 # Langfuse — hosted, nothing to run
@@ -290,8 +321,9 @@ apps/
   mcp-marketplace/  MCP server — listing tools and ui:// MCP Apps
 packages/
   shared/           domain types, criteria model, MCP Apps wire contract
-  catalog/          deterministic marketplace generator and car art
+  catalog/          scraped marketplace data, query layer and car art
   ranking/          per-mode scoring and criterion-citing rationales
+scripts/            one-off asset tooling (3D model preparation)
 specs/              spec-driven development artefacts
 ```
 
@@ -301,8 +333,19 @@ specs/              spec-driven development artefacts
 - [`specs/plan.md`](specs/plan.md) — technical plan
 - [`specs/tasks.md`](specs/tasks.md) — task breakdown
 - [`specs/3d-visualisation-plan.md`](specs/3d-visualisation-plan.md) — assessment of
-  3D car rendering, and why the 2D art was upgraded instead
+  3D car rendering, and why the catalogue's 2D art was upgraded instead. The
+  landing intro is where that investigation did land.
+- [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) — redistributed assets and
+  vendored code, with their terms
+- [`HANDOFF.md`](HANDOFF.md) — running notes on state and open threads
 
 ## Licence
 
-MIT
+MIT — for the code in this repository.
+
+Some redistributed assets are not: the landing intro's car model is CC BY 4.0 and
+requires attribution wherever it is shown, and three.js and the Draco decoder are
+vendored under their own licences. All of it is recorded in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), which also notes that *BMW*
+and *M4* are trademarks the CC BY licence grants no rights to — a commercial
+launch would swap the model out.
