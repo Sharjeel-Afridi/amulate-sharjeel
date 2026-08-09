@@ -58,10 +58,12 @@ function shortestArc(from, to) {
  * @param {HTMLElement} opts.container   element the canvas is appended to
  * @param {() => void}  [opts.onReady]   car loaded and first frame drawn
  * @param {() => void}  [opts.onLaunch]  speed crossed LAUNCH_SPEED, once
+ * @param {(tick: { speed: number, maxSpeed: number, launchSpeed: number, launched: boolean }) => void} [opts.onTick]
+ *   live telemetry, once per animation frame while the car exists
  * @param {(e: unknown) => void} [opts.onError]
  * @returns {{ setThrottle(on: boolean): void, dispose(): void }}
  */
-export function createIntro({ container, onReady, onLaunch, onError }) {
+export function createIntro({ container, onReady, onLaunch, onTick, onError }) {
   const clock = new THREE.Clock()
 
   let disposed = false
@@ -107,6 +109,10 @@ export function createIntro({ container, onReady, onLaunch, onError }) {
 
   const cameraTarget = new THREE.Vector3()
   const lookTarget = new THREE.Vector3()
+
+  // One object, mutated per frame — the HUD and audio read it 60 times a
+  // second, so allocating here would just feed the GC for no reason.
+  const tick = { speed: 0, maxSpeed: MAX_SPEED, launchSpeed: LAUNCH_SPEED, launched: false }
 
   function aspect() {
     const w = container.clientWidth || window.innerWidth
@@ -263,6 +269,12 @@ export function createIntro({ container, onReady, onLaunch, onError }) {
       onLaunch?.()
     }
     if (launched) sinceLaunch += delta
+
+    if (onTick) {
+      tick.speed = speed
+      tick.launched = launched
+      onTick(tick)
+    }
 
     updateCamera(delta)
   }

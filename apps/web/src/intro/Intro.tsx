@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { IntroController } from './scene/intro.js'
+import type { IntroController, IntroTick } from './scene/intro.js'
+import { createEngineAudio, type EngineAudio } from './engine-audio.js'
 import './intro.css'
 
 /**
@@ -8,8 +9,12 @@ import './intro.css'
  * A parked car, one instruction, one key. Holding ↑ is the whole interaction —
  * the moment the car actually moves we start the handover and the cockpit
  * crossfades in over the top. Once the transition ends the component unmounts
- * and takes its WebGL context with it, so nothing here costs anything for the
- * rest of the session.
+ * and takes its WebGL context — and its AudioContext — with it, so nothing here
+ * costs anything for the rest of the session.
+ *
+ * The scene feeds live telemetry through `onTick`; the HUD, the launch-charge
+ * ring, the speed-line overlay and the engine audio all follow it via refs and
+ * direct DOM writes. Nothing per-frame touches React state.
  */
 
 /** Crossfade window. Long enough to read as a pull-away, short enough to skip. */
@@ -66,6 +71,7 @@ export function Intro({
   /** Fired when the crossfade is over and the intro should be unmounted. */
   onDone: () => void
 }) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const controllerRef = useRef<IntroController | null>(null)
   const handoverRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -80,6 +86,21 @@ export function Intro({
   const [ready, setReady] = useState(false)
   const [holding, setHolding] = useState(false)
   const [launching, setLaunching] = useState(false)
+  const [muted, setMuted] = useState(false)
+
+  // Everything the per-frame tick handler needs, as refs — the handler is wired
+  // once and must never close over stale state.
+  const readyRef = useRef(false)
+  const holdingRef = useRef(false)
+  const mutedRef = useRef(false)
+  const engineRef = useRef<EngineAudio | null>(null)
+  const speedValRef = useRef<HTMLSpanElement>(null)
+  const rpmCoverRef = useRef<HTMLDivElement>(null)
+  const gearRef = useRef<HTMLSpanElement>(null)
+  const lastKmhRef = useRef(-1)
+  const lastGearRef = useRef('')
+  const lastBoostRef = useRef('')
+  const lastChargeRef = useRef('')
 
   // Touch and pen have no arrow keys, so the wording differs — but the cue is a
   // real press-and-hold control on every device. It used to be inert decoration
@@ -90,6 +111,24 @@ export function Intro({
   )
 
   /**
+   * Lazily create and start the engine on a throttle press — the AudioContext
+   * can only be created/resumed inside a user gesture, so this is the one
+   * place it is allowed to come to life. Reads refs only, so it stays stable.
+   */
+  const startEngine = useCallback(() => {
+    // No engine births after the handover starts — a throttle press during the
+    // crossfade would otherwise start a crank that outlives the intro's fade.
+    if (!readyRef.current || handoverRef.current) return
+    if (!engineRef.current) {
+      const engine = createEngineAudio()
+      // The mute toggle may have been armed before any audio existed.
+      engine.setMuted(mutedRef.current)
+      engineRef.current = engine
+    }
+    engineRef.current.start()
+  }, [])
+
+  /**
    * Start the crossfade. Idempotent, because both the car crossing the launch
    * speed and the skip button land here.
    */
@@ -97,6 +136,8 @@ export function Intro({
     if (handoverRef.current) return
     markIntroSeen()
     setLaunching(true)
+    // The engine sings through the pull-away and dies with the crossfade.
+    engineRef.current?.stop(HANDOVER_MS)
     launchRef.current()
     handoverRef.current = setTimeout(() => doneRef.current(), HANDOVER_MS)
   }, [])
@@ -117,6 +158,49 @@ export function Intro({
       doneRef.current()
     }
 
+    /**
+     * Live telemetry → audio intensity, HUD readouts and overlay CSS vars.
+     * Direct DOM writes, cached against their previous values — this runs
+     * every animation frame and must never schedule a React render.
+     */
+    const handleTick = (tick: IntroTick) => {
+      const ratio = tick.speed / tick.maxSpeed
+      // Throttle pinned but barely moving = revving hard against the clutch,
+      // so the floor while held is well above the actual road speed.
+      const intensity = Math.max(holdingRef.current ? 0.35 : 0, ratio)
+      engineRef.current?.setIntensity(intensity)
+
+      const root = rootRef.current
+      if (root) {
+        const charge = tick.launched ? '1' : Math.min(tick.speed / tick.launchSpeed, 1).toFixed(3)
+        if (charge !== lastChargeRef.current) {
+          lastChargeRef.current = charge
+          root.style.setProperty('--charge', charge)
+        }
+        const boost = ratio.toFixed(3)
+        if (boost !== lastBoostRef.current) {
+          lastBoostRef.current = boost
+          root.style.setProperty('--boost', boost)
+        }
+      }
+
+      const kmh = Math.round(tick.speed * 3.6)
+      if (kmh !== lastKmhRef.current && speedValRef.current) {
+        lastKmhRef.current = kmh
+        speedValRef.current.textContent = String(kmh)
+      }
+      if (rpmCoverRef.current) {
+        rpmCoverRef.current.style.transform = `scaleX(${(1 - intensity).toFixed(3)})`
+      }
+      if (gearRef.current) {
+        const gear = tick.speed < 0.5 ? 'N' : String(1 + Math.min(4, Math.floor(ratio * 5)))
+        if (gear !== lastGearRef.current) {
+          lastGearRef.current = gear
+          gearRef.current.textContent = gear
+        }
+      }
+    }
+
     void (async () => {
       try {
         // Split out so the vendored three build is fetched only when the intro
@@ -126,8 +210,13 @@ export function Intro({
 
         controller = mod.createIntro({
           container: stage,
-          onReady: () => !cancelled && setReady(true),
+          onReady: () => {
+            if (cancelled) return
+            readyRef.current = true
+            setReady(true)
+          },
           onLaunch: () => !cancelled && beginHandover(),
+          onTick: handleTick,
           onError: bail,
         })
         controllerRef.current = controller
@@ -142,6 +231,10 @@ export function Intro({
       handoverRef.current = null
       controllerRef.current = null
       controller?.dispose()
+      // Idempotent — if the handover already started the long fade, this call
+      // is a no-op and the context closes on the fade's own schedule.
+      engineRef.current?.stop(150)
+      engineRef.current = null
     }
   }, [beginHandover])
 
@@ -149,8 +242,10 @@ export function Intro({
   // the default scroll on ↑/space would fight the fixed overlay.
   useEffect(() => {
     const set = (on: boolean) => {
+      holdingRef.current = on
       setHolding(on)
       controllerRef.current?.setThrottle(on)
+      if (on) startEngine()
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -179,11 +274,13 @@ export function Intro({
       window.removeEventListener('blur', release)
       document.removeEventListener('visibilitychange', release)
     }
-  }, [])
+  }, [startEngine])
 
   const setThrottle = (on: boolean) => {
+    holdingRef.current = on
     setHolding(on)
     controllerRef.current?.setThrottle(on)
+    if (on) startEngine()
   }
 
   // Releasing outside the control, or having the pointer captured away, must
@@ -196,22 +293,96 @@ export function Intro({
     onPointerLeave: () => setThrottle(false),
   }
 
+  const toggleMute = () => {
+    const m = !mutedRef.current
+    mutedRef.current = m
+    setMuted(m)
+    // Before the first throttle press there is no engine yet — the toggle just
+    // arms the state the engine will be born with.
+    engineRef.current?.setMuted(m)
+  }
+
   return (
-    <div className={`intro${launching ? ' intro--launching' : ''}${ready ? ' intro--ready' : ''}`}>
+    <div
+      ref={rootRef}
+      className={`intro${launching ? ' intro--launching' : ''}${ready ? ' intro--ready' : ''}`}
+    >
       <div className="intro__stage" ref={stageRef} aria-hidden="true" />
       <div className="intro__grade" aria-hidden="true" />
+      <div className="intro__lines" aria-hidden="true" />
+
+      <div className="intro__hud" aria-hidden="true">
+        <div className="hud__row">
+          <div className="hud__speed">
+            <span className="hud__value" ref={speedValRef}>
+              0
+            </span>
+            <span className="hud__unit">km/h</span>
+          </div>
+          <div className="hud__gear">
+            <span className="hud__gear-label">gear</span>
+            <span className="hud__gear-value" ref={gearRef}>
+              N
+            </span>
+          </div>
+        </div>
+        <div className="hud__rpm">
+          <div className="hud__rpm-track">
+            <div className="hud__rpm-cover" ref={rpmCoverRef} />
+          </div>
+          <div className="hud__rpm-scale">
+            <span>rpm</span>
+            <span>redline</span>
+          </div>
+        </div>
+      </div>
 
       <div className="intro__ui">
-        <div className="intro__brand">
-          <span className="brand__mark" aria-hidden="true">C</span>
-          <span className="brand__name">Car Matchmaker</span>
+        <div className="intro__top">
+          <div className="intro__brand">
+            <span className="brand__mark" aria-hidden="true">C</span>
+            <span className="brand__name">Car Matchmaker</span>
+          </div>
+          <button
+            type="button"
+            className={`intro__mute${muted ? ' intro__mute--muted' : ''}`}
+            onClick={toggleMute}
+            aria-pressed={muted}
+            aria-label={muted ? 'Unmute engine audio' : 'Mute engine audio'}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2.5 6v4h2.6L9 13.2V2.8L5.1 6H2.5z" fill="currentColor" stroke="none" />
+              {muted ? (
+                <path d="M11.2 6.2l3.6 3.6M14.8 6.2l-3.6 3.6" />
+              ) : (
+                <path d="M11.2 5.7a3.3 3.3 0 0 1 0 4.6M13.1 3.9a6 6 0 0 1 0 8.2" />
+              )}
+            </svg>
+            <span>{muted ? 'Muted' : 'Sound'}</span>
+          </button>
         </div>
 
         <div className="intro__center">
-          <p className="intro__eyebrow">Rent or buy · 400 live listings</p>
-          <h1 className="intro__title">Find the car. Not the listings.</h1>
+          <p className="intro__eyebrow">
+            <span className="intro__live-dot" aria-hidden="true" />
+            290 live listings · rent or buy
+          </p>
+          <h1 className="intro__title">
+            <span className="intro__title-line">Stop browsing.</span>
+            <span className="intro__title-line intro__title-line--accent">Start driving.</span>
+          </h1>
           <p className="intro__sub">
-            An AI concierge that interviews you, searches the market, and explains every choice
+            An AI concierge that interviews you, hunts the whole market, and defends every pick
             against what you actually said.
           </p>
 
@@ -221,22 +392,26 @@ export function Intro({
               className={`intro__cue${holding ? ' intro__cue--held' : ''}`}
               {...holdProps}
             >
-              {coarse ? (
-                <>
-                  <span className="intro__pad" aria-hidden="true">↑</span>
-                  <span className="intro__cue-text">Touch and hold to start</span>
-                </>
-              ) : (
-                <>
+              <span className="intro__cue-ring" aria-hidden="true">
+                {coarse ? (
+                  <span className="intro__pad">↑</span>
+                ) : (
                   <kbd className="intro__key">↑</kbd>
-                  <span className="intro__cue-text">Hold ↑, or press and hold here</span>
-                </>
-              )}
+                )}
+              </span>
+              <span className="intro__cue-copy">
+                <span className="intro__cue-title">
+                  {coarse ? 'Hold to ignite' : 'Hold ↑ to ignite'}
+                </span>
+                <span className="intro__cue-hint">
+                  {coarse ? 'keep it pinned — launch at 25 km/h' : 'or press and hold right here'}
+                </span>
+              </span>
             </button>
           ) : (
             <div className="intro__cue intro__cue--loading">
               <span className="intro__spinner" aria-hidden="true" />
-              <span className="intro__cue-text">Warming up the engine…</span>
+              <span className="intro__cue-title">Rolling it out of the garage…</span>
             </div>
           )}
         </div>

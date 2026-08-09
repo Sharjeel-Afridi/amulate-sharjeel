@@ -4,6 +4,12 @@
  * The scene is a bright outdoor skybox and the app is a dark cockpit, so the
  * overlay carries a grade — vignette plus a cool wash — to pull the two ends of
  * the crossfade closer together. Without it the handover reads as a cut.
+ *
+ * Two custom properties are written per frame from the scene's tick (never via
+ * React state): `--charge` is progress toward launch speed and drives the cue
+ * ring, `--boost` is speed over max speed and drives the speed lines and the
+ * subtle zoom. Everything they animate degrades to a static frame when they
+ * stay at 0, and to nothing at all under prefers-reduced-motion.
  */
 
 .intro {
@@ -30,10 +36,12 @@
 }
 
 /* The canvas fades up once the car is in it, so the loading state is a calm
-   dark panel rather than a bare sky with no subject. */
+   dark panel rather than a bare sky with no subject. The scale rides --boost —
+   a barely-there push-in that sells acceleration without touching the camera. */
 .intro__stage {
   opacity: 0;
-  transition: opacity 0.9s ease;
+  transform: scale(calc(1 + var(--boost, 0) * 0.05));
+  transition: opacity 0.9s ease, filter 1s ease;
 }
 .intro--ready .intro__stage { opacity: 1; }
 
@@ -48,6 +56,176 @@
     linear-gradient(180deg, rgba(11, 12, 14, 0.5) 0%, transparent 26%, transparent 58%, rgba(11, 12, 14, 0.78) 100%);
 }
 
+/* ------------------------------------------------------------- speed lines */
+
+/* Invisible while parked (boost² keeps it superlinear), ramping in as speed
+   builds and peaking through the handover — the last second of the intro is
+   streaks over a car pulling away. */
+.intro__lines {
+  position: absolute;
+  inset: -4%;
+  pointer-events: none;
+  opacity: calc(var(--boost, 0) * var(--boost, 0) * 8);
+  overflow: hidden;
+}
+/* Vertical stripes with a 320px period, travelling exactly two periods per
+   loop along their own axis — the wrap lands on an identical phase at any
+   viewport width, so the loop has no seam. The 6° tilt lives in the same
+   transform; the oversize hides the corners the rotation would expose. */
+.intro__lines::before {
+  content: "";
+  position: absolute;
+  top: -25%;
+  bottom: -25%;
+  left: -8%;
+  right: calc(-8% - 640px);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 110px,
+    rgba(255, 255, 255, 0.11) 110px 112px,
+    transparent 112px 190px,
+    rgba(200, 255, 61, 0.09) 190px 191px,
+    transparent 191px 320px
+  );
+  animation: intro-streak 0.45s linear infinite;
+}
+.intro__lines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(58% 48% at 50% 45%, transparent 55%, rgba(200, 255, 61, 0.08) 100%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, transparent 12%, transparent 88%, rgba(255, 255, 255, 0.06) 100%);
+}
+@keyframes intro-streak {
+  from { transform: rotate(-6deg) translateX(0); }
+  to { transform: rotate(-6deg) translateX(-640px); }
+}
+
+/* --------------------------------------------------------------------- hud */
+
+.intro__hud {
+  position: absolute;
+  right: 30px;
+  bottom: 96px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.7s ease 0.25s, transform 0.7s var(--ease) 0.25s;
+}
+.intro--ready .intro__hud {
+  opacity: 1;
+  transform: none;
+}
+
+.hud__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.hud__speed {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hud__value {
+  min-width: 2.4ch;
+  text-align: right;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.hud__unit {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hud__gear {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(11, 12, 14, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.hud__gear-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.hud__gear-value {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud__rpm {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+/* The full sweep — lime into redline — is painted on the track; the cover is a
+   dark plate scaled down from the right per frame, so revealing the gradient
+   costs one transform and the colours never stretch. */
+.hud__rpm-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent) 68%, var(--warn) 82%, var(--danger) 100%);
+}
+.hud__rpm-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(10% - 1px),
+    rgba(8, 9, 11, 0.65) calc(10% - 1px) 10%
+  );
+}
+.hud__rpm-cover {
+  position: absolute;
+  inset: 0;
+  transform-origin: right;
+  transform: scaleX(1);
+  background: rgba(10, 12, 14, 0.9);
+  z-index: 1;
+}
+.hud__rpm-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.hud__rpm-scale span:last-child { color: var(--danger); }
+
+/* ---------------------------------------------------------------------- ui */
+
 .intro__ui {
   position: absolute;
   inset: 0;
@@ -59,49 +237,107 @@
 }
 .intro__ui > * { pointer-events: auto; }
 
+.intro__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .intro__brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  justify-self: start;
   text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6);
 }
+
+.intro__mute {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(11, 12, 14, 0.5);
+  color: var(--muted);
+  font: 500 12px/1 inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.intro__mute:hover { color: var(--text); border-color: var(--line-strong); }
+.intro__mute svg { display: block; }
+.intro__mute--muted { color: var(--faint); }
 
 .intro__center {
   align-self: center;
   justify-self: start;
   /* A `ch` cap here resolves against the container's own 14px, not the display
-     size of the heading inside it, so the title ended up four words tall. */
-  max-width: min(560px, 46vw);
+     size of the heading inside it, so a ch-based cap left the title four words
+     tall. Wider than before to hold the display type on two clean lines. */
+  max-width: min(720px, 56vw);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .intro__eyebrow {
   margin: 0;
+  display: flex;
+  align-items: center;
   font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
   text-shadow: 0 1px 14px rgba(0, 0, 0, 0.7);
 }
+.intro__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 9px;
+  flex: none;
+  animation: intro-pulse 2.2s ease-out infinite;
+}
+@keyframes intro-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(200, 255, 61, 0.45); }
+  70% { box-shadow: 0 0 0 9px rgba(200, 255, 61, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(200, 255, 61, 0); }
+}
 
 .intro__title {
   margin: 0;
-  font-size: clamp(32px, 5vw, 58px);
-  line-height: 1.02;
-  letter-spacing: -0.035em;
-  font-weight: 600;
-  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+  font-size: clamp(44px, 8vw, 100px);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  font-weight: 800;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.6);
+}
+.intro__title-line { display: block; }
+/* The one loud word-pair on the page: italic, gradient-filled, softly glowing.
+   text-shadow must be cleared — with a transparent fill the inherited shadow
+   would show straight through the glyphs. */
+.intro__title-line--accent {
+  font-style: italic;
+  padding-right: 0.08em; /* italic overhang would clip against the text box */
+  background: linear-gradient(94deg, var(--accent) 0%, #eaffb4 62%, #ffffff 118%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 26px rgba(200, 255, 61, 0.3));
 }
 
 .intro__sub {
   margin: 0;
-  max-width: 42ch;
+  max-width: 44ch;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 15.5px;
   line-height: 1.55;
   text-shadow: 0 1px 14px rgba(0, 0, 0, 0.6);
 }
@@ -145,12 +381,12 @@
 /* ------------------------------------------------------------------- cue */
 
 .intro__cue {
-  margin-top: 10px;
+  margin-top: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px 10px 11px;
-  border: 1px solid var(--border-strong);
+  gap: 14px;
+  padding: 9px 22px 9px 9px;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: rgba(11, 12, 14, 0.55);
   backdrop-filter: blur(10px);
@@ -166,19 +402,63 @@
     background var(--dur) var(--ease);
 }
 .intro__cue:hover { background: rgba(20, 22, 26, 0.7); border-color: var(--accent-dim, rgba(200, 255, 61, 0.4)); }
-.intro__cue--loading { cursor: default; }
+.intro__cue--loading { cursor: default; padding-left: 16px; }
 .intro__cue:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Held glow scales with real launch charge, so the button visibly "fills up"
+   the closer the car gets to lift-off. */
 .intro__cue--held {
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-glow);
+  box-shadow:
+    0 0 0 4px var(--accent-glow),
+    0 0 36px rgba(200, 255, 61, calc(0.08 + var(--charge, 0) * 0.5));
 }
 
-.intro__cue-text {
+/* Progress ring around the key: a conic sweep masked to a 3px band, driven by
+   --charge. It reaches full circle at the exact frame the handover starts. */
+.intro__cue-ring {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.intro__cue-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--charge, 0) * 360deg), rgba(255, 255, 255, 0.14) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+
+.intro__cue-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+.intro__cue-title {
   font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.intro__cue--held .intro__cue-title { color: var(--accent); }
+.intro__cue-hint {
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
-.intro__cue--held .intro__cue-text { color: var(--text); }
+.intro__cue--loading .intro__cue-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--muted);
+}
 
 .intro__key,
 .intro__pad {
@@ -187,7 +467,7 @@
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--line-strong);
   border-bottom-width: 3px;
   background: var(--surface-2);
   color: var(--text);
@@ -216,9 +496,9 @@
 .intro__spinner {
   width: 14px;
   height: 14px;
-  margin: 0 8px;
+  margin: 0 8px 0 0;
   border-radius: 50%;
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--line-strong);
   border-top-color: var(--accent);
   animation: intro-spin 0.8s linear infinite;
 }
@@ -227,7 +507,7 @@
 .intro__skip {
   flex: none;
   padding: 7px 13px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(11, 12, 14, 0.5);
   color: var(--faint);
@@ -237,19 +517,32 @@
   -webkit-backdrop-filter: blur(10px);
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
-.intro__skip:hover { color: var(--text); border-color: var(--border-strong); }
+.intro__skip:hover { color: var(--text); border-color: var(--line-strong); }
 
 /* -------------------------------------------------------------- handover */
 
 /* The copy clears out first so the last thing on screen is the car pulling
-   away, then the whole layer dissolves into the cockpit behind it. */
-.intro--launching { opacity: 0; }
+   away, then the whole layer dissolves into the cockpit behind it. The shake
+   is a couple of pixels — camera buffeting, not an earthquake. */
+.intro--launching {
+  opacity: 0;
+  animation: intro-shake 0.28s linear infinite;
+}
 .intro--launching .intro__ui {
   opacity: 0;
   transform: translateY(-14px);
   pointer-events: none;
 }
 .intro--launching .intro__grade { opacity: 0; transition: opacity 0.9s ease; }
+.intro--launching .intro__stage { filter: blur(1.5px); }
+
+@keyframes intro-shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(1.4px, -1px); }
+  50% { transform: translate(-1.2px, 1.2px); }
+  75% { transform: translate(1px, 0.8px); }
+  100% { transform: translate(0, 0); }
+}
 
 /* The cockpit sits behind the intro the whole time — mounted, connected and
    warm — so the crossfade lands on a live app rather than an empty shell. */
@@ -266,9 +559,26 @@
 
 @media (max-width: 899px) {
   .intro__center { max-width: none; align-self: end; padding-bottom: 4vh; }
+  .intro__title { font-size: clamp(38px, 11vw, 68px); }
   .intro__ui { padding: 18px 18px 22px; }
   .intro__foot { flex-direction: column; align-items: flex-start; gap: 14px; }
   .intro__proof li:nth-child(n + 3) { display: none; }
+  .intro__cue-hint { white-space: normal; }
+
+  /* Portrait stacks the copy along the bottom, so the HUD moves to the top
+     right under the mute toggle and shrinks out of the car's way. */
+  .intro__hud,
+  .intro--ready .intro__hud {
+    right: 18px;
+    bottom: auto;
+    top: 66px;
+    transform: scale(0.82);
+    transform-origin: top right;
+  }
+  .intro__hud { opacity: 0; }
+  .intro--ready .intro__hud { opacity: 1; }
+  .hud__value { font-size: 36px; }
+  .hud__rpm { width: 176px; }
 
   /* Portrait stacks the copy under the car, so the scrim has to come from the
      bottom — the angled one used on wide screens misses it entirely. */
@@ -286,6 +596,12 @@
   }
 }
 
+/* `?intro=1` can force the intro past the reduced-motion skip, so every
+   decorative animation still has to stand down here. */
 @media (prefers-reduced-motion: reduce) {
-  .intro__key, .intro__pad, .intro__spinner { animation: none; }
+  .intro__key, .intro__pad, .intro__spinner, .intro__live-dot { animation: none; }
+  .intro__lines { display: none; }
+  .intro__stage { transform: none; }
+  .intro--launching { animation: none; }
+  .intro--launching .intro__stage { filter: none; }
 }
