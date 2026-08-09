@@ -1,10 +1,11 @@
 /**
  * Checks the loaded catalogue is coherent before anything reasons over it.
  *
- * The thresholds describe the real fleet rather than an aspiration: 45 scraped
- * offers, both modes, seven body styles. What matters now is not volume but that
- * every listing is complete — a missing boot figure or a NaN price is invisible
- * until a rationale quotes it at someone.
+ * The thresholds are the hackathon's floor: at least 100 listings, ten body
+ * styles, ten brands in each — the scrape plus the generated extension must
+ * clear all three or the market is thinner than promised. Volume alone is not
+ * enough, though: every listing must also be complete, because a missing boot
+ * figure or a NaN price is invisible until a rationale quotes it at someone.
  *
  * Run with `npm run verify -w @car/catalog`. Exits non-zero so it can gate a build.
  */
@@ -43,7 +44,11 @@ if (all.filter(isRental).length !== all.filter(isPurchase).length) {
   failures.push('rent and buy counts differ — every car should be available both ways')
 }
 if (new Set(all.map((l) => l.id)).size !== all.length) failures.push('duplicate listing ids')
-if (brandsByCategory.size < 5) failures.push(`only ${brandsByCategory.size} categories`)
+if (all.length < 100) failures.push(`only ${all.length} listings — the floor is 100`)
+if (brandsByCategory.size < 10) failures.push(`only ${brandsByCategory.size} categories — the floor is 10`)
+for (const [category, brands] of brandsByCategory) {
+  if (brands.size < 10) failures.push(`${category}: only ${brands.size} brands — the floor is 10`)
+}
 
 /**
  * Completeness, field by field.
@@ -64,7 +69,9 @@ for (const l of all) {
   if (!positive(l.consumption)) problems.push('consumption')
   if (!positive(l.rating) || l.rating > 5) problems.push(`rating=${l.rating}`)
   if (!nonEmpty(l.location) || !nonEmpty(l.colour)) problems.push('location/colour')
-  if (!nonEmpty(l.imageUrl) || !l.imageUrl.startsWith('https://')) problems.push('imageUrl')
+  const imageOk =
+    nonEmpty(l.imageUrl) && (l.imageUrl.startsWith('https://') || l.imageUrl.startsWith('data:image/svg'))
+  if (!imageOk) problems.push('imageUrl')
   if (isRental(l) && (!positive(l.dailyRate) || !positive(l.monthlyRate) || !positive(l.excess))) {
     problems.push('rental pricing')
   }

@@ -1,20 +1,24 @@
 import type { Category, FuelType, Listing, PurchaseListing, RentalListing, Transmission } from '@car/shared'
+import { carArtDataUri } from './art.js'
 import cars from './cars.json' with { type: 'json' }
+import { generatedOffers } from './generate.js'
 
 /**
- * The marketplace, loaded from real scraped inventory.
+ * The marketplace: a real scrape, extended deterministically.
  *
- * `cars.json` holds 45 genuine offers — real models, real day rates, real
+ * `cars.json` holds genuine offers — real models, real day rates, real
  * photographs — enriched by `enrich.ts` with the fields the matchmaker reasons
- * over. Each one becomes two listings, because the same car can be hired or
- * bought and the two are different products off one asset: a hire is priced per
- * day and capped on mileage, a purchase carries the mileage it has already done.
+ * over. `generate.ts` widens that core into a full market, priced by the same
+ * formulas and seeded so every run sees the same inventory. Each offer becomes
+ * two listings, because the same car can be hired or bought and the two are
+ * different products off one asset: a hire is priced per day and capped on
+ * mileage, a purchase carries the mileage it has already done.
  *
- * Loading rather than generating is what makes the rationales worth reading. "A
+ * Anchoring on the scrape is what makes the rationales worth reading. "A
  * 2023 BMW 3 Series Touring, 520 L boot" is a claim about a car that exists.
  */
 
-interface RawOffer {
+export interface RawOffer {
   offerId: string
   brand: string
   model: string
@@ -66,6 +70,9 @@ interface CarsFile {
 
 const file = cars as unknown as CarsFile
 
+/** Scraped first, generated after — a stable order the whole app can rely on. */
+const allOffers: RawOffer[] = [...file.offers, ...generatedOffers()]
+
 /** Ids are derived from the real offer id, so a listing traces back to its source. */
 const idFor = (mode: 'rent' | 'buy', offerId: string) => `${mode}-${offerId.toLowerCase()}`
 
@@ -87,7 +94,9 @@ function baseOf(o: RawOffer) {
     location: o.location,
     rating: o.rating,
     reviewCount: o.reviewCount,
-    imageUrl: o.images.car,
+    // No honest photo (the scrape has no pickups) beats a dishonest one —
+    // fall back to the parametric side-profile art rather than borrow a body style.
+    imageUrl: o.images.car || carArtDataUri(o.brand, o.category),
   }
 }
 
@@ -120,25 +129,25 @@ function toPurchase(o: RawOffer): PurchaseListing {
   }
 }
 
-/** Every listing, both modes, in file order so the catalogue is stable. */
+/** Every listing, both modes, in offer order so the catalogue is stable. */
 export function loadCatalog(): Listing[] {
-  return file.offers.flatMap((o): Listing[] => [toRental(o), toPurchase(o)])
+  return allOffers.flatMap((o): Listing[] => [toRental(o), toPurchase(o)])
 }
 
 /** Categories the inventory actually contains — nothing else is worth offering. */
 export function availableCategories(): Category[] {
-  const seen = new Set(file.offers.map((o) => o.category as Category))
+  const seen = new Set(allOffers.map((o) => o.category as Category))
   return [...seen].sort()
 }
 
 /** Price range per mode, so the budget question can be scaled to real stock. */
 export function priceRange(mode: 'rent' | 'buy'): { min: number; max: number } {
-  const values = file.offers.map((o) => (mode === 'rent' ? o.rent.monthlyRate : o.buy.price))
+  const values = allOffers.map((o) => (mode === 'rent' ? o.rent.monthlyRate : o.buy.price))
   return { min: Math.min(...values), max: Math.max(...values) }
 }
 
 export const catalogueSource = {
   currency: file.currency,
   source: file.source ?? 'unknown',
-  offers: file.offers.length,
+  offers: allOffers.length,
 }
