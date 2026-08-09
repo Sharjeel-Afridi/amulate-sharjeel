@@ -85,6 +85,7 @@ export function Intro({
 
   const [ready, setReady] = useState(false)
   const [holding, setHolding] = useState(false)
+  const [revving, setRevving] = useState(false)
   const [launching, setLaunching] = useState(false)
   const [muted, setMuted] = useState(false)
 
@@ -92,6 +93,7 @@ export function Intro({
   // once and must never close over stale state.
   const readyRef = useRef(false)
   const holdingRef = useRef(false)
+  const revvingRef = useRef(false)
   const mutedRef = useRef(false)
   const engineRef = useRef<EngineAudio | null>(null)
   const speedValRef = useRef<HTMLSpanElement>(null)
@@ -101,6 +103,7 @@ export function Intro({
   const lastGearRef = useRef('')
   const lastBoostRef = useRef('')
   const lastChargeRef = useRef('')
+  const lastRevRef = useRef('')
 
   // Touch and pen have no arrow keys, so the wording differs — but the cue is a
   // real press-and-hold control on every device. It used to be inert decoration
@@ -166,8 +169,9 @@ export function Intro({
     const handleTick = (tick: IntroTick) => {
       const ratio = tick.speed / tick.maxSpeed
       // Throttle pinned but barely moving = revving hard against the clutch,
-      // so the floor while held is well above the actual road speed.
-      const intensity = Math.max(holdingRef.current ? 0.35 : 0, ratio)
+      // so the floor while held is well above the actual road speed. A neutral
+      // rev competes with both: whichever is loading the engine hardest wins.
+      const intensity = Math.max(holdingRef.current ? 0.35 : 0, ratio, tick.rev)
       engineRef.current?.setIntensity(intensity)
 
       const root = rootRef.current
@@ -181,6 +185,13 @@ export function Intro({
         if (boost !== lastBoostRef.current) {
           lastBoostRef.current = boost
           root.style.setProperty('--boost', boost)
+        }
+        // The rev button glows on the real envelope, so it keeps burning for a
+        // beat after release exactly as the engine note does.
+        const rev = tick.rev.toFixed(3)
+        if (rev !== lastRevRef.current) {
+          lastRevRef.current = rev
+          root.style.setProperty('--rev', rev)
         }
       }
 
@@ -238,30 +249,56 @@ export function Intro({
     }
   }, [beginHandover])
 
-  // Throttle input. ArrowUp only — every other key is deliberately inert, and
-  // the default scroll on ↑/space would fight the fixed overlay.
-  useEffect(() => {
-    const set = (on: boolean) => {
+  // The two hold controls. Both are stable across renders, so the key listeners
+  // wire once and the pointer handlers can share them rather than restating the
+  // same four lines.
+  const applyThrottle = useCallback(
+    (on: boolean) => {
       holdingRef.current = on
       setHolding(on)
       controllerRef.current?.setThrottle(on)
       if (on) startEngine()
-    }
+    },
+    [startEngine],
+  )
+
+  const applyRev = useCallback(
+    (on: boolean) => {
+      revvingRef.current = on
+      setRevving(on)
+      controllerRef.current?.setRevving(on)
+      if (on) startEngine()
+    },
+    [startEngine],
+  )
+
+  // Hold input. ArrowUp drives and space revs in neutral; every other key is
+  // deliberately inert, and the default scroll on ↑/space would fight the fixed
+  // overlay.
+  useEffect(() => {
+    const isRev = (e: KeyboardEvent) => e.code === 'Space' || e.key === ' '
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowUp') return
+      const rev = isRev(e)
+      if (!rev && e.key !== 'ArrowUp') return
+      // Space would scroll, and would also activate whichever button has focus
+      // — including "Skip intro", the one control that throws the moment away.
       e.preventDefault()
       if (e.repeat) return
-      set(true)
+      ;(rev ? applyRev : applyThrottle)(true)
     }
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowUp') return
+      const rev = isRev(e)
+      if (!rev && e.key !== 'ArrowUp') return
       e.preventDefault()
-      set(false)
+      ;(rev ? applyRev : applyThrottle)(false)
     }
     // Releasing the key outside the window never fires keyup, which would leave
-    // the throttle stuck on.
-    const release = () => set(false)
+    // a control stuck on.
+    const release = () => {
+      applyThrottle(false)
+      applyRev(false)
+    }
 
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -274,24 +311,19 @@ export function Intro({
       window.removeEventListener('blur', release)
       document.removeEventListener('visibilitychange', release)
     }
-  }, [startEngine])
-
-  const setThrottle = (on: boolean) => {
-    holdingRef.current = on
-    setHolding(on)
-    controllerRef.current?.setThrottle(on)
-    if (on) startEngine()
-  }
+  }, [applyRev, applyThrottle])
 
   // Releasing outside the control, or having the pointer captured away, must
-  // not leave the throttle stuck on — the same failure the keyboard path guards
-  // against with window blur.
-  const holdProps = {
-    onPointerDown: () => setThrottle(true),
-    onPointerUp: () => setThrottle(false),
-    onPointerCancel: () => setThrottle(false),
-    onPointerLeave: () => setThrottle(false),
-  }
+  // not leave it stuck on — the same failure the keyboard path guards against
+  // with window blur.
+  const holdBinding = (apply: (on: boolean) => void) => ({
+    onPointerDown: () => apply(true),
+    onPointerUp: () => apply(false),
+    onPointerCancel: () => apply(false),
+    onPointerLeave: () => apply(false),
+  })
+  const holdProps = holdBinding(applyThrottle)
+  const revProps = holdBinding(applyRev)
 
   const toggleMute = () => {
     const m = !mutedRef.current
@@ -387,27 +419,51 @@ export function Intro({
           </p>
 
           {ready ? (
-            <button
-              type="button"
-              className={`intro__cue${holding ? ' intro__cue--held' : ''}`}
-              {...holdProps}
-            >
-              <span className="intro__cue-ring" aria-hidden="true">
+            <div className="intro__controls">
+              <button
+                type="button"
+                className={`intro__cue${holding ? ' intro__cue--held' : ''}`}
+                {...holdProps}
+              >
+                <span className="intro__cue-ring" aria-hidden="true">
+                  {coarse ? (
+                    <span className="intro__pad">↑</span>
+                  ) : (
+                    <kbd className="intro__key">↑</kbd>
+                  )}
+                </span>
+                <span className="intro__cue-copy">
+                  <span className="intro__cue-title">
+                    {coarse ? 'Hold to ignite' : 'Hold ↑ to ignite'}
+                  </span>
+                  <span className="intro__cue-hint">
+                    {coarse ? 'keep it pinned — launch at 25 km/h' : 'or press and hold right here'}
+                  </span>
+                </span>
+              </button>
+
+              {/* Secondary on purpose: revving is the toy, igniting is the door. */}
+              <button
+                type="button"
+                className={`intro__rev${revving ? ' intro__rev--held' : ''}`}
+                aria-pressed={revving}
+                aria-label="Hold to rev the engine in neutral"
+                {...revProps}
+              >
                 {coarse ? (
-                  <span className="intro__pad">↑</span>
+                  <span className="intro__pad intro__pad--wide" aria-hidden="true">
+                    rev
+                  </span>
                 ) : (
-                  <kbd className="intro__key">↑</kbd>
+                  <kbd className="intro__key intro__key--wide" aria-hidden="true">
+                    space
+                  </kbd>
                 )}
-              </span>
-              <span className="intro__cue-copy">
-                <span className="intro__cue-title">
-                  {coarse ? 'Hold to ignite' : 'Hold ↑ to ignite'}
+                <span className="intro__rev-copy">
+                  {coarse ? 'Hold to rev' : 'Rev in neutral'}
                 </span>
-                <span className="intro__cue-hint">
-                  {coarse ? 'keep it pinned — launch at 25 km/h' : 'or press and hold right here'}
-                </span>
-              </span>
-            </button>
+              </button>
+            </div>
           ) : (
             <div className="intro__cue intro__cue--loading">
               <span className="intro__spinner" aria-hidden="true" />
@@ -417,11 +473,34 @@ export function Intro({
         </div>
 
         <div className="intro__foot">
-          <ul className="intro__proof">
-            <li>Interviews you in eleven questions</li>
-            <li>Screens every listing against your dealbreakers</li>
-            <li>Books and checks out without leaving the chat</li>
-          </ul>
+          <div className="intro__foot-copy">
+            <ul className="intro__proof">
+              <li>Interviews you in eleven questions</li>
+              <li>Screens every listing against your dealbreakers</li>
+              <li>Books and checks out without leaving the chat</li>
+            </ul>
+            {/* CC BY 4.0 obliges us to name the work, its author and the licence
+                wherever the model is shown — not just in a repo file. */}
+            <p className="intro__credit">
+              “BMW M4 Competition M Package” by SRT Perfomance, via{' '}
+              <a
+                href="https://sketchfab.com/3d-models/bmw-m4-competition-m-package-5c0a2dafb1ad408d9fc9eeef9aee531b"
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Sketchfab
+              </a>
+              , licensed{' '}
+              <a
+                href="http://creativecommons.org/licenses/by/4.0/"
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                CC BY 4.0
+              </a>
+              .
+            </p>
+          </div>
           <button type="button" className="intro__skip" onClick={beginHandover}>
             Skip intro
           </button>

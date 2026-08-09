@@ -3,6 +3,8 @@
 export type IntroController = {
   /** Forward throttle. Ignored until the car has loaded. */
   setThrottle: (on: boolean) => void
+  /** Blip the engine in neutral. Never moves the car, never launches. */
+  setRevving: (on: boolean) => void
   /** Stops the render loop and releases the WebGL context. */
   dispose: () => void
 }
@@ -17,6 +19,8 @@ export type IntroTick = {
   /** Speed at which `onLaunch` fires, m/s — lets the UI show launch progress. */
   launchSpeed: number
   launched: boolean
+  /** Neutral revs, 0..1. Independent of `speed` — the car does not move on it. */
+  rev: number
 }
 
 export function createIntro(opts: {
