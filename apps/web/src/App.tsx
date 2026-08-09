@@ -93,10 +93,17 @@ function Stepper({ phase }: { phase: Phase }) {
 /**
  * Driver switch.
  *
- * Front and centre rather than buried, because the failure it covers is a live
- * one: a free-tier provider throttling in the middle of a demo. Scripted runs
- * the same journey through the same tools and surfaces, so flipping it is a
- * recovery, not a downgrade — and it takes the session's gathered state with it.
+ * It lives in the drawer's footer rather than the bar. The bar has to hold the
+ * brand, the phase stepper, the live spec and the agent's activity, and a
+ * two-option pill competing with all of that is what pushed the chips into
+ * overlapping it. The footer is pinned — it does not scroll away behind the
+ * spec sheet — so the failure this covers, a free-tier provider throttling
+ * mid-demo, is still one tap and one click from anywhere in the journey.
+ *
+ * Scripted runs the same journey through the same tools and surfaces, so
+ * flipping it is a recovery, not a downgrade — and it takes the session's
+ * gathered state with it. The room the footer affords is spent saying exactly
+ * that, in place of the tooltips nobody hovered long enough to read.
  */
 function ModeToggle({
   mode,
@@ -116,7 +123,6 @@ function ModeToggle({
         className={`modeswitch__opt${mode === 'scripted' ? ' modeswitch__opt--on' : ''}`}
         aria-pressed={mode === 'scripted'}
         onClick={() => onChange('scripted')}
-        title="Deterministic driver — no model, no API key, no rate limits. Highlights the controls to click."
       >
         Scripted
       </button>
@@ -126,11 +132,6 @@ function ModeToggle({
         aria-pressed={mode === 'agent'}
         disabled={!agentAvailable}
         onClick={() => onChange('agent')}
-        title={
-          agentAvailable
-            ? `Model-backed agent${agentName ? ` — ${agentName}` : ''}`
-            : 'Needs AGENT_API_KEY on the server'
-        }
       >
         Agent
       </button>
@@ -454,12 +455,20 @@ function SpecDrawer({
   a2ui,
   onAction,
   onError,
+  mode,
+  agentAvailable,
+  agentName,
+  onModeChange,
 }: {
   open: boolean
   onClose: () => void
   a2ui: A2uiHostProps['messages']
   onAction: (action: A2uiClientAction) => void
   onError: (e: unknown) => void
+  mode: DriverMode
+  agentAvailable: boolean
+  agentName: string | null
+  onModeChange: (mode: DriverMode) => void
 }) {
   // Escape is the expected way out of anything that overlays.
   useEffect(() => {
@@ -495,6 +504,27 @@ function SpecDrawer({
           </p>
           <A2uiHost messages={a2ui} surfaceId="journey" onAction={onAction} onError={onError} />
         </div>
+
+        {/* Pinned, not scrolled with the sheet: switching driver is a recovery
+            move, and a recovery you have to go looking for is not one. */}
+        <footer className="drawer__foot">
+          <div className="drawer__setting">
+            <span className="drawer__setting-title">Driver</span>
+            <ModeToggle
+              mode={mode}
+              agentAvailable={agentAvailable}
+              agentName={agentName}
+              onChange={onModeChange}
+            />
+          </div>
+          <p className="drawer__setting-hint">
+            {!agentAvailable
+              ? 'Scripted walks the whole journey deterministically. The model-backed agent needs AGENT_API_KEY on the server.'
+              : mode === 'scripted'
+                ? 'Deterministic — no model is called, so nothing can rate-limit. The controls it understands are highlighted as you go.'
+                : `Model-backed${agentName ? ` — ${agentName}` : ''}. Switch to scripted if it stalls; your answers come with you.`}
+          </p>
+        </footer>
       </aside>
     </>
   )
@@ -585,12 +615,6 @@ export function App() {
                   <span className="agentpulse__label">{lastStep ?? 'Working on it…'}</span>
                 </div>
               )}
-              <ModeToggle
-                mode={mode}
-                agentAvailable={agent.available}
-                agentName={agent.name}
-                onChange={(next) => void setMode(next)}
-              />
               <SpecChips preferences={state?.preferences ?? {}} />
               <button
                 type="button"
@@ -609,8 +633,13 @@ export function App() {
             <div className="guidebar" role="status">
               <span className="guidebar__dot" aria-hidden="true" />
               Scripted demo — no model is called. Click the{' '}
-              <span className="guidebar__swatch" aria-hidden="true" /> highlighted controls to walk
-              the journey. Typing still works, but it is pattern-matched rather than understood.
+              <span className="guidebar__swatch" aria-hidden="true" /> highlighted control to walk
+              the journey. Typing still works, but it is pattern-matched rather than understood.{' '}
+              {/* The switch moved off the bar, so the one screen that talks about
+                  driver mode is the right place to say where it went. */}
+              <button type="button" className="guidebar__link" onClick={() => setSpecOpen(true)}>
+                Switch driver
+              </button>
             </div>
           )}
 
@@ -645,6 +674,10 @@ export function App() {
             a2ui={a2ui}
             onAction={onAction}
             onError={onError}
+            mode={mode}
+            agentAvailable={agent.available}
+            agentName={agent.name}
+            onModeChange={(next) => void setMode(next)}
           />
 
           {renderErrors.length > 0 && (

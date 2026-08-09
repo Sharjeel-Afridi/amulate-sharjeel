@@ -265,13 +265,13 @@ body::before {
 }
 
 .modeswitch__opt {
-  height: 24px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 var(--s4);
   border: 0;
   border-radius: 99px;
   background: transparent;
   color: var(--faint);
-  font: 600 var(--fs-tiny)/1 inherit;
+  font: 600 var(--fs-small)/1 inherit;
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -313,6 +313,23 @@ body::before {
   margin: 0 2px;
 }
 
+/* Inline in the sentence, because it is part of what the sentence says — not a
+   second button competing with the highlighted control the bar is about. */
+.guidebar__link {
+  margin-left: auto;
+  flex: none;
+  padding: 3px var(--s2);
+  border: 1px solid var(--accent-dim);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--accent);
+  font: 600 var(--fs-tiny)/1.4 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease);
+}
+.guidebar__link:hover { background: rgba(200, 255, 61, 0.12); }
+
 /* ==========================================================================
    Guided highlight — scripted mode only.
    ==========================================================================
@@ -345,16 +362,40 @@ body::before {
 
 /* --------------------------------------------------------- spec chips */
 
-.specchips { display: flex; align-items: center; gap: var(--s2); justify-content: flex-end; min-width: 0; }
+/*
+ * `flex-wrap` plus `overflow: hidden` is the guarantee, not the plan.
+ *
+ * The chips do not shrink — a chip clipped mid-glyph reads as a bug — so as the
+ * bar tightens they have to leave whole, which is what the queries below do.
+ * But a viewport query cannot know how long "Weekend trips with the kids" is,
+ * and when the row did overrun, the chips spilled *out* of this box and painted
+ * straight over whatever sat to their left. Wrapping sends the overrun to a
+ * second line and the hidden overflow clips it against the bar's own height, so
+ * the worst case is now a chip that vanishes rather than one that lands on top
+ * of its neighbour.
+ */
+.specchips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  justify-content: flex-end;
+  min-width: 0;
+  max-height: 28px;
+  overflow: hidden;
+}
 
 /*
- * The chips share the bar with the mode switch, so they shed from the least
- * informative end as space runs out rather than all clipping together. Nothing
- * is lost by dropping them — the stage's spec tab carries the full sheet.
+ * Which chips survive is now decided by what actually fits rather than by
+ * guessed breakpoints: they wrap in DOM order, so the ones pushed to the second
+ * line — the least informative end, seats before budget before category — are
+ * the ones clipped away. Nothing is lost by dropping them; the spec drawer
+ * carries the full sheet.
+ *
+ * Below this the bar restructures for the compact stepper and there is no room
+ * for the spec at all.
  */
-@media (max-width: 1440px) { .specchips .chip:nth-child(n + 4) { display: none; } }
-@media (max-width: 1320px) { .specchips .chip:nth-child(n + 3) { display: none; } }
-@media (max-width: 1180px) { .specchips { display: none; } }
+@media (max-width: 1040px) { .specchips { display: none; } }
 
 /*
  * A chip is exactly as wide as what it says. `flex: none` is the load-bearing
@@ -909,6 +950,47 @@ body::before {
 
 .drawer__hint {
   margin: 0 0 var(--s4);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+/* ------------------------------------------------------- drawer footer */
+
+/*
+ * The driver switch, pinned below the scrolling sheet.
+ *
+ * It sat in the top bar until the spec chips grew long enough to overlap it.
+ * Here it has room to say what each mode actually does — which the tooltips it
+ * used to carry never managed — and being outside the scroller means it is in
+ * the same place whether the sheet is at the top or the bottom.
+ */
+.drawer__foot {
+  flex: none;
+  padding: var(--s4) var(--s5) var(--s5);
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.drawer__setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.drawer__setting-title {
+  font-size: var(--fs-tiny);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.drawer__foot .modeswitch__opt { min-width: 78px; text-align: center; }
+
+.drawer__setting-hint {
+  margin: var(--s3) 0 0;
   font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--faint);
