@@ -1,18 +1,26 @@
-import { PHASES, type Phase } from '@car/shared'
+import { PHASES, type Phase, type Preferences, money } from '@car/shared'
 import { A2uiHost, type A2uiClientAction } from './a2ui/index.js'
 import { Intro, shouldPlayIntro } from './intro/index.js'
 import { McpAppCard } from './mcp/index.js'
+import { useStickyScroll } from './useStickyScroll.js'
 import { type ChatItem, useSession } from './session.js'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 /**
- * The three-zone cockpit.
+ * The cockpit: a journey bar over two working columns.
  *
- * Each zone exists because a requirement demanded it: the rail makes multistep
- * agent state visible, the centre carries the conversation and the in-chat MCP
- * Apps, and the stage gives the ranked catalogue the width it needs. The rail's
- * spec and the stage are both rendered from A2UI messages the API streams — the
- * phase stepper is app chrome and stays native.
+ * Each region exists because a requirement demanded it. The bar makes multistep
+ * agent state visible, the conversation carries the dialogue and the in-chat MCP
+ * Apps, and the stage gives the ranked catalogue the width it needs.
+ *
+ * The journey used to be a 272px left column. It held four dots and five lines
+ * of text, and the space it cost came out of the conversation — which is where
+ * the booking and payment widgets live, and where the width actually matters.
+ * Laid out horizontally the same information fits in one row, and the column it
+ * gives back is what lets a transactional form breathe.
+ *
+ * The bar's spec chips and the stage are both rendered from A2UI messages the
+ * API streams; the phase stepper is app chrome and stays native.
  */
 
 const PHASE_LABELS: Record<Phase, string> = {
@@ -30,57 +38,101 @@ const HOST_CONTEXT = {
   locale: 'en-IE',
   styles: {
     '--accent': '#c8ff3d',
-    '--accent-ink': '#16200a',
+    '--accent-ink': '#14200a',
     // The iframe has nothing behind it, so it needs an explicit surface or it
     // falls back to white and the dark widget becomes unreadable.
-    '--bg': '#101216',
+    '--bg': '#15181d',
   },
 }
 
-function JourneyRail({
-  phase,
-  a2ui,
-  onError,
-}: {
-  phase: Phase
-  a2ui: A2uiHostProps['messages']
-  onError: (e: unknown) => void
-}) {
+/* -------------------------------------------------------------- top bar */
+
+function Stepper({ phase }: { phase: Phase }) {
+  const steps = PHASES.filter((p) => p !== 'done')
   const currentIndex = PHASES.indexOf(phase)
 
   return (
-    <section className="panel panel--journey" aria-label="Journey">
-      <header className="panel__head">
-        <div className="brand">
-          <span className="brand__mark" aria-hidden="true">C</span>
-          <span className="brand__name">Car Matchmaker</span>
-        </div>
-      </header>
-
-      <div className="panel__body">
-        {PHASES.filter((p) => p !== 'done').map((p, i) => {
+    <>
+      <div className="stepper" aria-label="Journey progress">
+        {steps.map((p, i) => {
           const state = i < currentIndex ? 'done' : i === currentIndex ? 'active' : 'todo'
           return (
-            <div className={`phase phase--${state}`} key={p}>
-              <span className="phase__dot" aria-hidden="true">{state === 'done' ? '✓' : ''}</span>
-              <span className="phase__label">{PHASE_LABELS[p]}</span>
+            <div className="stepper__step-wrap" key={p} style={{ display: 'contents' }}>
+              {i > 0 && <span className="stepper__rule" aria-hidden="true" />}
+              <div
+                className={`stepper__step stepper__step--${state}`}
+                aria-current={state === 'active' ? 'step' : undefined}
+              >
+                <span className="stepper__dot" aria-hidden="true">{state === 'done' ? '✓' : ''}</span>
+                <span className="stepper__label">{PHASE_LABELS[p]}</span>
+              </div>
             </div>
           )
         })}
-
-        <div className="rail-spec">
-          <A2uiHost messages={a2ui} surfaceId="journey" onError={onError} />
-        </div>
       </div>
-    </section>
+
+      <div className="stepper__compact">
+        Step {Math.min(currentIndex + 1, steps.length)} of {steps.length} ·{' '}
+        <b>{PHASE_LABELS[phase]}</b>
+      </div>
+    </>
   )
 }
+
+/** The three facts worth carrying in the chrome. The rest lives on the spec tab. */
+function specChips(p: Preferences): { key: string; label: string; value: string }[] {
+  const chips: { key: string; label: string; value: string }[] = []
+  if (p.mode) chips.push({ key: 'mode', label: '', value: p.mode === 'rent' ? 'Renting' : 'Buying' })
+  if (p.category) chips.push({ key: 'category', label: '', value: p.category.toUpperCase() })
+  if (p.budgetMax) {
+    chips.push({
+      key: 'budget',
+      label: 'Budget',
+      value: p.mode === 'buy' ? money(p.budgetMax) : `${money(p.budgetMax)}/mo`,
+    })
+  }
+  if (p.seatsMin) chips.push({ key: 'seats', label: 'Seats', value: `${p.seatsMin}+` })
+  return chips
+}
+
+function SpecChips({ preferences }: { preferences: Preferences }) {
+  const chips = specChips(preferences)
+  // Newly filled chips flash once. Tracking which keys are new needs the
+  // previous render's set, which a ref holds without causing another render.
+  const seen = useRef(new Set<string>())
+  const fresh = chips.filter((c) => !seen.current.has(c.key)).map((c) => c.key)
+  useEffect(() => {
+    for (const c of chips) seen.current.add(c.key)
+  })
+
+  if (chips.length === 0) {
+    return (
+      <div className="specchips">
+        <span className="chip chip--ghost">Spec — building…</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="specchips" aria-label="Your spec">
+      {chips.map((c) => (
+        <span className={`chip${fresh.includes(c.key) ? ' chip--new' : ''}`} key={c.key}>
+          {c.label && <span>{c.label}</span>}
+          <b>{c.value}</b>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------- conversation */
 
 type A2uiHostProps = Parameters<typeof A2uiHost>[0]
 
 function Conversation({
   items,
   busy,
+  phase,
   a2ui,
   onSend,
   onAction,
@@ -89,6 +141,7 @@ function Conversation({
 }: {
   items: ChatItem[]
   busy: boolean
+  phase: Phase
   a2ui: A2uiHostProps['messages']
   onSend: (text: string) => void
   onAction: (action: A2uiClientAction) => void
@@ -96,11 +149,22 @@ function Conversation({
   onError: (e: unknown) => void
 }) {
   const [draft, setDraft] = useState('')
-  const endRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [items.length])
+  // Scrolling has to survive the iframes, which report their height after they
+  // have mounted and again on every step change. Watching content size rather
+  // than the message count is the only thing that keeps up with them.
+  const scrollerRef = useStickyScroll<HTMLDivElement>()
+
+  // Only the newest MCP App stays interactive. A superseded one — a booking form
+  // whose payment screen has already opened — collapses to a receipt line, so
+  // the transaction reads as a sequence instead of a stack.
+  const liveAppId = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      if (item?.kind === 'app') return item.id
+    }
+    return undefined
+  }, [items])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,11 +177,14 @@ function Conversation({
   return (
     <section className="panel panel--chat" aria-label="Conversation">
       <header className="panel__head">
-        <span className="panel__title">Conversation</span>
-        {busy && <span className="panel__title">thinking…</span>}
+        <span className="panel__title">Concierge</span>
+        <span className="status" style={{ marginLeft: 'auto' }}>
+          <span className={`status__dot${busy ? ' status__dot--busy' : ''}`} aria-hidden="true" />
+          {busy ? 'Working' : 'Ready'}
+        </span>
       </header>
 
-      <div className="panel__body">
+      <div className="panel__body" ref={scrollerRef}>
         <div className="chat">
           {items.map((item) => {
             switch (item.kind) {
@@ -130,30 +197,45 @@ function Conversation({
               case 'step':
                 return (
                   <div className="step" key={item.id} title={item.detail}>
-                    <span className="step__icon" aria-hidden="true">▸</span>
-                    <span>{item.label}</span>
+                    <span className="step__icon" aria-hidden="true">●</span>
+                    <span className="step__label">{item.label}</span>
+                    <span className="step__rule" aria-hidden="true" />
                   </div>
                 )
               case 'app':
-                return (
+                return item.id === liveAppId ? (
                   <McpAppCard
                     key={item.id}
-                    label={item.toolName}
+                    label={item.toolName === 'start_booking' ? 'Booking' : item.toolName}
                     html={item.html}
                     hostContext={HOST_CONTEXT}
                     onCallTool={(name, args) => onCallTool(name, args)}
                   />
+                ) : (
+                  <div className="receipt" key={item.id}>
+                    <span className="receipt__check" aria-hidden="true">✓</span>
+                    <span className="receipt__label">Booking details captured</span>
+                  </div>
                 )
             }
           })}
 
           {/* The interview's form half — the agent asks in prose above, the
-              control to answer it renders here, inline in the conversation. */}
-          <div className="interview">
-            <A2uiHost messages={a2ui} surfaceId="interview" onAction={onAction} onError={onError} />
-          </div>
+              control to answer it renders here, inline in the conversation. It
+              is scoped to the interview: leaving it mounted afterwards pinned a
+              stale "search on this" card below the booking form for the rest of
+              the session. */}
+          {phase === 'interview' && (
+            <div className="interview">
+              <A2uiHost messages={a2ui} surfaceId="interview" onAction={onAction} onError={onError} />
+            </div>
+          )}
 
-          <div ref={endRef} />
+          {busy && (
+            <div className="typing" aria-label="The concierge is typing">
+              <span /><span /><span />
+            </div>
+          )}
         </div>
       </div>
 
@@ -171,39 +253,80 @@ function Conversation({
   )
 }
 
+/* ---------------------------------------------------------------- stage */
+
 function Stage({
   a2ui,
-  hasResults,
+  resultCount,
   onAction,
   onError,
 }: {
   a2ui: A2uiHostProps['messages']
-  hasResults: boolean
+  resultCount: number
   onAction: (action: A2uiClientAction) => void
   onError: (e: unknown) => void
 }) {
+  const hasResults = resultCount > 0
+  const [tab, setTab] = useState<'matches' | 'spec'>('spec')
+
+  // Results arriving is the moment the stage has something better to show than
+  // the spec, so it switches itself — once. A later manual switch back sticks.
+  const announced = useRef(false)
+  useEffect(() => {
+    if (hasResults && !announced.current) {
+      announced.current = true
+      setTab('matches')
+    }
+  }, [hasResults])
+
   return (
     <section className="panel panel--stage" aria-label="Results">
       <header className="panel__head">
-        <span className="panel__title">Stage</span>
+        <span className="panel__title">{tab === 'matches' ? 'Your matches' : 'Your spec'}</span>
+        <div className="tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'matches'}
+            className={`tab${tab === 'matches' ? ' tab--active' : ''}`}
+            onClick={() => setTab('matches')}
+            disabled={!hasResults}
+          >
+            Matches
+            {hasResults && <span className="tab__count">{resultCount}</span>}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'spec'}
+            className={`tab${tab === 'spec' ? ' tab--active' : ''}`}
+            onClick={() => setTab('spec')}
+          >
+            Your spec
+          </button>
+        </div>
       </header>
 
       <div className="panel__body">
-        {hasResults ? (
+        {tab === 'matches' ? (
           <A2uiHost messages={a2ui} surfaceId="stage" onAction={onAction} onError={onError} />
         ) : (
-          <div className="empty">
-            <div className="empty__title">Your matches will appear here</div>
-            <p className="empty__hint">
-              Tell the agent what you need and it will search the marketplace, then
-              rank what it finds and explain each choice.
-            </p>
-          </div>
+          <>
+            <A2uiHost messages={a2ui} surfaceId="journey" onError={onError} />
+            {!hasResults && (
+              <p className="empty__hint" style={{ marginTop: 'var(--s5)', maxWidth: '40ch' }}>
+                Answer the questions on the left and this fills in. Nothing is searched until
+                you approve the finished spec.
+              </p>
+            )}
+          </>
         )}
       </div>
     </section>
   )
 }
+
+/* ------------------------------------------------------------------ app */
 
 export function App() {
   const { state, items, a2ui, busy, send, sendAction, callTool } = useSession()
@@ -233,7 +356,7 @@ export function App() {
     sendAction(action.name, (action.context ?? {}) as Record<string, unknown>)
   }
 
-  const hasResults = (state?.shortlist.length ?? 0) > 0
+  const phase = state?.phase ?? 'interview'
 
   return (
     <>
@@ -244,17 +367,34 @@ export function App() {
         inert={entry === 'intro'}
       >
         <main className="cockpit">
-          <JourneyRail phase={state?.phase ?? 'interview'} a2ui={a2ui} onError={onError} />
-          <Conversation
-            items={items}
-            busy={busy}
-            a2ui={a2ui}
-            onSend={send}
-            onAction={onAction}
-            onCallTool={callTool}
-            onError={onError}
-          />
-          <Stage a2ui={a2ui} hasResults={hasResults} onAction={onAction} onError={onError} />
+          <header className="topbar">
+            <div className="brand">
+              <span className="brand__mark" aria-hidden="true">C</span>
+              <span className="brand__name">Car Matchmaker</span>
+            </div>
+            <Stepper phase={phase} />
+            <SpecChips preferences={state?.preferences ?? {}} />
+          </header>
+
+          <div className="cockpit__body">
+            <Conversation
+              items={items}
+              busy={busy}
+              phase={phase}
+              a2ui={a2ui}
+              onSend={send}
+              onAction={onAction}
+              onCallTool={callTool}
+              onError={onError}
+            />
+            <Stage
+              a2ui={a2ui}
+              resultCount={state?.shortlist.length ?? 0}
+              onAction={onAction}
+              onError={onError}
+            />
+          </div>
+
           {renderErrors.length > 0 && (
             <div className="render-errors" role="alert">
               {renderErrors.length} UI message(s) failed to render — see console.

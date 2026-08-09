@@ -32,41 +32,73 @@ import type { Question } from './interview.js'
  */
 export function initSurfaces(): A2uiMessage[] {
   return [
-    createSurface(SURFACES.journey, BASIC_CATALOG),
-    // The stage uses our merged catalog so CarCard and friends resolve.
+    // Both the journey sheet and the stage use our merged catalog, so SpecRow,
+    // CarCard and friends resolve on either.
+    createSurface(SURFACES.journey, CAR_CATALOG),
     createSurface(SURFACES.stage, CAR_CATALOG),
     createSurface(SURFACES.interview, BASIC_CATALOG),
   ]
 }
 
-/** Journey rail: the spec assembling as the interview proceeds. */
+/**
+ * The spec sheet, assembling as the interview proceeds.
+ *
+ * Rendered as label/value rows rather than a column of sentences. Both carry the
+ * same words, but only the paired form lets someone scan down the right-hand
+ * column and see at a glance what is still blank — which is the entire job of
+ * showing the spec before anything is searched.
+ */
 export function buildJourneySurface(state: SessionState): A2uiMessage[] {
   const p = state.preferences
+  const exclusions = state.criteria.filter((c) => c.kind === 'exclusion')
+
+  const rows: { label: string; value: string; filled: boolean }[] = [
+    { label: 'Rent or buy', value: p.mode === 'rent' ? 'Renting' : p.mode === 'buy' ? 'Buying' : '', filled: Boolean(p.mode) },
+    { label: 'Use case', value: p.useCase ?? '', filled: Boolean(p.useCase) },
+    { label: 'Category', value: p.category ? p.category.toUpperCase() : '', filled: Boolean(p.category) },
+    {
+      label: 'Budget',
+      value: p.budgetMax
+        ? p.mode === 'buy'
+          ? `Up to ${money(p.budgetMax)}`
+          : `Up to ${money(p.budgetMax)}/mo`
+        : '',
+      filled: Boolean(p.budgetMax),
+    },
+    { label: 'Seats', value: p.seatsMin ? `${p.seatsMin} or more` : '', filled: Boolean(p.seatsMin) },
+    { label: 'Gearbox', value: p.transmission ?? '', filled: Boolean(p.transmission) },
+    { label: 'Fuel', value: p.fuel ?? '', filled: Boolean(p.fuel) },
+    {
+      label: p.mode === 'buy' ? 'Collection' : 'Dates',
+      value: p.targetDate ? (p.returnDate ? `${p.targetDate} → ${p.returnDate}` : p.targetDate) : '',
+      filled: Boolean(p.targetDate),
+    },
+    {
+      label: 'Dealbreakers',
+      value: exclusions.length ? exclusions.map((c) => c.label).join(', ') : '',
+      filled: exclusions.length > 0,
+    },
+  ]
 
   return [
-    // The whole preference object goes into the data model so bound components
-    // update themselves on the next patch rather than being rebuilt.
+    // The whole row set goes into the data model so the template fans out over
+    // it and a later answer is a data patch, not a component rebuild.
     updateDataModel(SURFACES.journey, '/', {
       phase: state.phase,
       preferences: p,
       search: state.search ?? null,
+      rows,
     }),
     updateComponents(SURFACES.journey, [
-      column('root', ['title', 'spec']),
-      text('title', 'Your spec', 'h5'),
-      column('spec', ['mode', 'useCase', 'category', 'budget', 'date']),
-      text('mode', p.mode ? (p.mode === 'rent' ? 'Renting' : 'Buying') : 'Rent or buy — not set'),
-      text('useCase', p.useCase ?? 'Use case — not set'),
-      text('category', p.category ?? 'Category — not set'),
-      text(
-        'budget',
-        p.budgetMax
-          ? p.mode === 'buy'
-            ? `Up to ${money(p.budgetMax)}`
-            : `Up to ${money(p.budgetMax)}/month`
-          : 'Budget — not set',
-      ),
-      text('date', p.targetDate ?? 'Date — not set'),
+      column('root', ['sheet']),
+      { id: 'sheet', component: 'Column', children: { componentId: 'specRow', path: '/rows' } },
+      {
+        id: 'specRow',
+        component: 'SpecRow',
+        label: { path: 'label' },
+        value: { path: 'value' },
+        filled: { path: 'filled' },
+      },
     ]),
   ]
 }

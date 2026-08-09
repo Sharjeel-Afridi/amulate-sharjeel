@@ -161,6 +161,36 @@ export const PriceBadge = createComponentImplementation(PriceBadgeApi, ({ props 
   )
 })
 
+export const SpecRowApi = {
+  name: 'SpecRow',
+  schema: z.object({
+    ...commonProps,
+    label: CommonSchemas.DynamicString,
+    value: CommonSchemas.DynamicString.optional(),
+    /** False gets the placeholder treatment — a field nobody has filled yet. */
+    filled: CommonSchemas.DynamicBoolean.optional(),
+  }),
+}
+
+/**
+ * One line of the assembling spec: what was asked on the left, what the agent
+ * recorded on the right.
+ *
+ * A plain column of sentences ("Budget — not set") technically carried the same
+ * information, but nothing lined up, so there was no way to scan for what was
+ * still missing. Pairing label and value on one row makes the gaps obvious.
+ */
+export const SpecRow = createComponentImplementation(SpecRowApi, ({ props }) => {
+  const filled = props.filled !== false && Boolean(props.value)
+
+  return (
+    <div className={`a2ui-specrow${filled ? ' a2ui-specrow--filled' : ''}`}>
+      <span className="a2ui-specrow__label">{props.label}</span>
+      <span className="a2ui-specrow__value">{filled ? props.value : 'Not set'}</span>
+    </div>
+  )
+})
+
 export const ReasoningStepApi = {
   name: 'ReasoningStep',
   schema: z.object({
@@ -191,7 +221,13 @@ export const ReasoningStep = createComponentImplementation(ReasoningStepApi, ({ 
 })
 
 /** Every custom component, in registration order. */
-export const CUSTOM_COMPONENTS: ReactComponentImplementation[] = [CarCard, MatchScore, PriceBadge, ReasoningStep]
+export const CUSTOM_COMPONENTS: ReactComponentImplementation[] = [
+  CarCard,
+  MatchScore,
+  PriceBadge,
+  ReasoningStep,
+  SpecRow,
+]
 
 /**
  * The catalog to hand the MessageProcessor. Spreading `basicCatalog` keeps the

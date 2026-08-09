@@ -134,15 +134,25 @@ export function useSession() {
   const callTool = useCallback(async (name: string, args: Record<string, unknown>) => {
     const id = sessionRef.current
     if (!id) throw new Error('no session')
-    const res = await fetch(`/api/session/${id}/tool`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, arguments: args }),
-    })
-    const body = (await res.json()) as { error?: string }
-    if (!res.ok) throw new Error(body.error ?? 'tool call failed')
+    // Busy goes up before the request, not after it resolves. The API answers
+    // the widget first and only then runs the driver, so the `idle` that closes
+    // this turn could arrive while we were still awaiting the response — and a
+    // busy flag raised after its own reset never comes down again. That is the
+    // whole of the "thinking…" that used to stay on screen forever.
     setBusy(true)
-    return body
+    try {
+      const res = await fetch(`/api/session/${id}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, arguments: args }),
+      })
+      const body = (await res.json()) as { error?: string }
+      if (!res.ok) throw new Error(body.error ?? 'tool call failed')
+      return body
+    } catch (err) {
+      setBusy(false)
+      throw err
+    }
   }, [])
 
   return { sessionId, state, items, a2ui, busy, connected, send, sendAction, callTool }
