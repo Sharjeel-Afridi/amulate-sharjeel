@@ -94,6 +94,53 @@ function contentToText(content: unknown): string {
   return stringify(content)
 }
 
+/**
+ * Normalises a generation's `output` into role/content pairs.
+ *
+ * Two shapes arrive here and only one is a message list. On the chat completions
+ * API — which `agent-driver.ts` pins, because it is the only one every
+ * OpenAI-compatible provider implements — `output` holds the raw response
+ * object, so reading `role` and `content` off it yields an assistant message
+ * with empty text. That is worse than useless: it renders in both UIs as a model
+ * that replied with nothing.
+ *
+ * The second correction is tool calls. A turn that decided only to call tools
+ * has no content at all, and showing that as an empty completion hides the very
+ * thing the span is evidence of. The calls are rendered as text instead.
+ */
+function outputMessages(output: GenerationSpanData['output']): { role: string; content: string }[] {
+  const messages: { role: string; content: string }[] = []
+
+  for (const entry of output ?? []) {
+    // Raw chat completion: unwrap to the messages inside its choices.
+    const choices = (entry as { choices?: unknown }).choices
+    const candidates = Array.isArray(choices)
+      ? choices.map((c) => (c as { message?: unknown }).message ?? c)
+      : [entry]
+
+    for (const candidate of candidates) {
+      const m = (candidate ?? {}) as Record<string, unknown>
+      const role = typeof m.role === 'string' ? m.role : 'assistant'
+      const text = contentToText(m.content)
+      const calls = Array.isArray(m.tool_calls) ? m.tool_calls : []
+
+      const rendered = calls
+        .map((call) => {
+          const fn = (call as { function?: { name?: string; arguments?: string } }).function
+          return fn?.name ? `${fn.name}(${fn.arguments ?? ''})` : undefined
+        })
+        .filter(Boolean)
+
+      messages.push({
+        role,
+        content: text || (rendered.length ? rendered.join('\n') : ''),
+      })
+    }
+  }
+
+  return messages
+}
+
 /** How each SDK span type maps onto an OpenInference kind and a display name. */
 function classify(data: SpanData): { kind: sc.Kind; name: string; observation: string } {
   switch (data.type) {
@@ -237,10 +284,9 @@ function applyGeneration(span: OtelSpan, data: GenerationSpanData): void {
     span.setAttribute(sc.llmInputMessage(i, 'role'), role)
     span.setAttribute(sc.llmInputMessage(i, 'content'), truncate(contentToText(message.content)))
   }
-  for (const [i, message] of (data.output ?? []).entries()) {
-    const role = typeof message.role === 'string' ? message.role : 'assistant'
-    span.setAttribute(sc.llmOutputMessage(i, 'role'), role)
-    span.setAttribute(sc.llmOutputMessage(i, 'content'), truncate(contentToText(message.content)))
+  for (const [i, message] of outputMessages(data.output).entries()) {
+    span.setAttribute(sc.llmOutputMessage(i, 'role'), message.role)
+    span.setAttribute(sc.llmOutputMessage(i, 'content'), truncate(message.content))
   }
 
   // Also as input/output values: both UIs fall back to these when they cannot

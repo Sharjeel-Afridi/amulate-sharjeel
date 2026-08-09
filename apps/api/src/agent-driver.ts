@@ -1,4 +1,12 @@
-import { Agent, MCPServerStreamableHttp, run, setTracingDisabled, tool } from '@openai/agents'
+import {
+  Agent,
+  MCPServerStreamableHttp,
+  run,
+  setTraceProcessors,
+  setTracingDisabled,
+  tool,
+  withTrace,
+} from '@openai/agents'
 import { setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents-openai'
 import { CATEGORIES } from '@car/shared'
 import OpenAI from 'openai'
@@ -18,6 +26,7 @@ import {
   startBooking,
 } from './journey.js'
 import { withRateLimitRetry, withTimeout } from './llm.js'
+import { OtelTracingProcessor, tracingEnabled } from './otel/index.js'
 import { createModelRanker } from './rank-agent.js'
 
 /**
@@ -107,9 +116,25 @@ function configureProvider(cfg: AgentConfig): void {
   // Only OpenAI implements the Responses API; every compatible provider speaks
   // chat completions, so pin it rather than letting the SDK negotiate.
   setOpenAIAPI('chat_completions')
-  // Tracing uploads to OpenAI, which we are not using — without this every turn
-  // logs a warning about a missing key that has nothing to do with our provider.
-  setTracingDisabled(true)
+
+  /*
+   * The SDK's tracing was never the problem — its default exporter was. That
+   * exporter uploads to OpenAI, so on a Groq or Gemini key every turn logged a
+   * warning about a missing credential having nothing to do with our provider,
+   * and the fix was to silence tracing wholesale.
+   *
+   * With an exporter of our own there is nothing to silence: the `agent`,
+   * `function` and `generation` spans the SDK was always producing become the
+   * trace tree. `setTraceProcessors` rather than `addTraceProcessor` because the
+   * former *replaces* the default list — adding would leave the OpenAI uploader
+   * attached and bring the warning back with it.
+   */
+  if (tracingEnabled()) {
+    setTraceProcessors([new OtelTracingProcessor()])
+    setTracingDisabled(false)
+  } else {
+    setTracingDisabled(true)
+  }
   configured = true
 }
 
@@ -340,7 +365,18 @@ export class LlmAgentDriver implements AgentDriver {
       const result = await withTimeout(
         // A generous ceiling: the loop should end in two or three tool calls, so
         // hitting this means the model is stuck, and the error says so plainly.
-        () => withRateLimitRetry(() => run(agent, text, { maxTurns: 12 })),
+        //
+        // `withTrace` names the workflow and carries the session id as the
+        // trace's group, which is what lets a backend stitch a session's
+        // per-turn traces back into one conversation.
+        () =>
+          withRateLimitRetry(() =>
+            withTrace(
+              'chat turn',
+              () => run(agent, text, { maxTurns: 12 }),
+              { groupId: ctx.sessionId, metadata: { phase: ctx.state.phase, model: this.cfg.model } },
+            ),
+          ),
         TURN_TIMEOUT_MS,
         `No response after ${TURN_TIMEOUT_MS / 1000}s — the provider is probably rate-limiting. ` +
           'Set AGENT_MODE=scripted to fall back.',

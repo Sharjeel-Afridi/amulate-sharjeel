@@ -24,6 +24,7 @@ import {
 } from './interview.js'
 import { callToolForApp, callToolJson } from './mcp.js'
 import type { TurnContext } from './driver.js'
+import { Kind, annotate, semconv, setOutput, withSpan } from './otel/index.js'
 import { rank } from './ranking.js'
 
 /**
@@ -247,7 +248,45 @@ function stretchCount(shortlist: RankedListing[], criteria: Criterion[]): number
  * writes the reply itself from the returned summary — the same results described
  * twice in two voices reads as a bug.
  */
+/**
+ * Traced wrapper. The work is `research` below; this only draws the span.
+ *
+ * Split rather than instrumented inline because research is the one step that
+ * runs identically from a typed instruction, a tapped "confirm spec" and a
+ * "search again" — so it is the span you compare across those three paths, and
+ * it needs to exist whichever one opened it.
+ */
 export async function runResearch(
+  ctx: TurnContext,
+  opts: { narrate?: boolean; ranker?: Ranker } = {},
+): Promise<ResearchSummary> {
+  return withSpan(
+    'research',
+    {
+      kind: Kind.Chain,
+      input: {
+        preferences: ctx.state.preferences,
+        criteria: ctx.state.criteria.map((c) => `${c.kind}:${c.label}`),
+      },
+      attributes: { [semconv.CAR_PHASE]: 'research' },
+    },
+    async () => {
+      const summary = await research(ctx, opts)
+      annotate({
+        [semconv.CAR_SHORTLIST_SIZE]: summary.top.length,
+        'car.qualified': summary.qualified,
+        'car.ruled_out': summary.ruledOut,
+        ...(summary.bindingConstraint
+          ? { 'car.binding_constraint': summary.bindingConstraint.label }
+          : {}),
+      })
+      setOutput(summary)
+      return summary
+    },
+  )
+}
+
+async function research(
   ctx: TurnContext,
   { narrate = true, ranker = scorerRanker }: { narrate?: boolean; ranker?: Ranker } = {},
 ): Promise<ResearchSummary> {
@@ -332,10 +371,41 @@ export async function runResearch(
     return { qualified: 0, ruledOut: ruledOut.length, bindingConstraint: binding, top: [] }
   }
 
-  const { shortlist, summary, rankedBy } = await ranker(
-    qualified.map((a) => a.listing),
-    prefs,
-    ctx.state.criteria,
+  /*
+   * `rankedBy` is the single most useful attribute in this trace.
+   *
+   * The ranker falls back to the deterministic scorer whenever the model is
+   * throttled, times out or returns something unparseable — deliberately, so the
+   * stage is never empty. But that degradation is invisible in the product: the
+   * user still gets eight ranked cars with rationales. Recording which path ran
+   * is what turns "the explanations felt generic today" into a filterable fact.
+   */
+  const { shortlist, summary, rankedBy } = await withSpan(
+    'rank',
+    {
+      kind: Kind.Chain,
+      attributes: { [semconv.CAR_CANDIDATES]: qualified.length },
+    },
+    async () => {
+      const ranked = await ranker(
+        qualified.map((a) => a.listing),
+        prefs,
+        ctx.state.criteria,
+      )
+      annotate({
+        [semconv.CAR_RANKED_BY]: ranked.rankedBy,
+        [semconv.CAR_SHORTLIST_SIZE]: ranked.shortlist.length,
+      })
+      setOutput(
+        ranked.shortlist.map((r) => ({
+          id: r.listing.id,
+          rank: r.rank,
+          score: r.score,
+          rationale: r.rationale,
+        })),
+      )
+      return ranked
+    },
   )
 
   const stretched = stretchCount(shortlist, ctx.state.criteria)

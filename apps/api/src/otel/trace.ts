@@ -86,13 +86,26 @@ export async function withSpan<T>(
  * one span that never closes and no way to compare turns against each other.
  */
 export async function withTurn<T>(
-  args: { sessionId: string; trigger: string; label: string; driver: string; phase: string },
+  args: {
+    sessionId: string
+    trigger: string
+    /**
+     * The span name. Must stay low-cardinality — backends aggregate latency by
+     * name, so anything containing user text turns the dashboard into a list of
+     * one-off rows. The text itself belongs in `input`.
+     */
+    label: string
+    driver: string
+    phase: string
+    input?: unknown
+  },
   fn: (span: Span | undefined) => Promise<T>,
 ): Promise<T> {
   return withSpan(
     args.label,
     {
       kind: sc.Kind.Chain,
+      input: args.input,
       attributes: {
         [sc.SESSION_ID]: args.sessionId,
         [sc.CAR_DRIVER]: args.driver,
