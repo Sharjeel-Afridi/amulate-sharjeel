@@ -11,8 +11,15 @@ import type { A2uiMessage } from './a2ui.js'
 export type ServerEvent =
   /** Full state snapshot. Sent on connect and after any mutation. */
   | { type: 'state'; state: SessionState }
-  /** A turn of conversation from the agent. */
-  | { type: 'message'; text: string }
+  /**
+   * A turn of conversation from the agent.
+   *
+   * `tag` names the message's identity across re-emissions. When the client
+   * sees a tag it already holds, it rewinds the transcript to the previous
+   * occurrence instead of appending — which is how going back through the
+   * interview un-piles the questions it walked past.
+   */
+  | { type: 'message'; text: string; tag?: string }
   /** A collapsed reasoning chip in the chat stream — what the agent just did. */
   | { type: 'step'; label: string; detail?: string }
   /** Declarative UI for one of the A2UI surfaces. */

@@ -63,6 +63,8 @@ Ordered. `[x]` done · `[~]` in progress · `[ ]` not started.
 - [ ] Full end-to-end rehearsal
 
 ## Phase 8 — Stretch (h20–24)
-- [ ] Langfuse + OpenTelemetry tracing
+- [x] Langfuse + OpenTelemetry tracing — vendor-neutral OTLP, Langfuse or Phoenix
+      by `OTEL_BACKEND`. Includes a `TracingProcessor` bridge for the Agents SDK
+      (no JS equivalent exists) and a journey-level eval suite.
 - [ ] Slide deck
 - [ ] Video demo

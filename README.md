@@ -208,6 +208,79 @@ lists the tools and `ui://` resources, and exercises the whole booking path.
 
 ---
 
+## Observability and evals
+
+Off by default. Set `OTEL_BACKEND` and traces go to Langfuse or Arize Phoenix over
+OTLP; leave it unset and nothing is registered at all — no exporter, no flush
+loop, no behaviour change. `GET /api/health` reports which.
+
+```bash
+# Langfuse — hosted, nothing to run
+OTEL_BACKEND=langfuse LANGFUSE_PUBLIC_KEY=pk-lf-… LANGFUSE_SECRET_KEY=sk-lf-… npm run dev
+
+# Phoenix — local container
+docker run -p 6006:6006 arizephoenix/phoenix:latest
+OTEL_BACKEND=phoenix npm run dev
+```
+
+Spans carry **OpenInference** attributes, the only vocabulary both backends read,
+so switching is one environment variable and no code.
+
+A traced turn nests the whole multistep loop:
+
+```
+turn: message                                   ← one trace per turn, grouped by session.id
+└─ chat turn
+   └─ Agent workflow                 tok 5426/136
+      └─ Car Matchmaker              [AGENT]
+         ├─ mcp.list_tools           [TOOL]
+         ├─ turn 1 · Car Matchmaker  tok 2651/104
+         │  ├─ generation            [LLM  llama-3.3-70b-versatile]
+         │  ├─ record_preferences    [TOOL]  ×3
+         │  └─ show_spec             [TOOL]
+         └─ turn 2 · Car Matchmaker  tok 2775/32
+            └─ generation            [LLM]
+```
+
+Two things make this more than a library install. The Agents SDK's spans are
+translated by a `TracingProcessor` written for the purpose (`otel/agents-bridge.ts`)
+— the OpenInference auto-instrumentation every guide points at is Python-only, and
+no JS package covers `@openai/agents`. And because most of this journey is
+deliberately *not* model-driven, the deterministic path is instrumented by hand,
+so a user who taps through the interview produces a trace rather than a blank.
+
+The attribute worth watching is `car.ranked_by`. The ranker falls back to the
+deterministic scorer whenever the model is throttled or unparseable, which is
+invisible in the product — the user still gets eight explained cars. It is the
+difference between "the explanations felt generic today" and a filterable fact.
+
+### Evals
+
+```bash
+npm run eval:judge -w @car/api      # 2 calls: is the judge itself trustworthy?
+npm run eval       -w @car/api      # scripted — free, deterministic
+EVAL_MODE=agent npm run eval -w @car/api    # grades the model ranker
+```
+
+The dataset is whole journeys, not prompts, because that is the unit that ships —
+a prompt-level score says nothing about whether the interview reached a spec or
+whether screening left anything to rank. Most criteria are deterministic and cost
+nothing: specific figures cited, no generic filler, a usable score spread, rank
+agreeing with score. One is a model judge, for the only thing a regex cannot
+check — whether a rationale asserts a fact the listing does not support.
+
+Run `eval:judge` first. It is two calls, and it caught the judge falsely failing
+correct rationales over `$1,500` versus `1500`.
+
+> **Token budget.** One agent turn measured ~5,400 prompt tokens, and Groq's free
+> tier allows 100,000 a day — so a full 12-turn agent journey is a meaningful
+> slice of the allowance and `EVAL_MODE=agent` is deliberately opt-in. The judge
+> takes its own `EVAL_JUDGE_*` credentials: partly to spend a different budget,
+> partly because `llama-3.3-70b-versatile` is not on Groq's structured-outputs
+> list and cannot be asked for a schema-conformant verdict.
+
+---
+
 ## Repository layout
 
 ```

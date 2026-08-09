@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 type ServerEvent =
   | { type: 'state'; state: SessionState }
-  | { type: 'message'; text: string }
+  | { type: 'message'; text: string; tag?: string }
   | { type: 'step'; label: string; detail?: string }
   | { type: 'a2ui'; messages: A2uiMessage[] }
   | { type: 'mcpApp'; toolName: string; html: string }
@@ -26,7 +26,7 @@ type ServerEvent =
  * a separate panel — the brief requires booking to happen without leaving chat.
  */
 export type ChatItem =
-  | { kind: 'agent'; id: string; text: string }
+  | { kind: 'agent'; id: string; text: string; tag?: string }
   | { kind: 'user'; id: string; text: string }
   | { kind: 'step'; id: string; label: string; detail?: string }
   | { kind: 'app'; id: string; toolName: string; html: string }
@@ -83,7 +83,22 @@ export function useSession() {
             return setState((s) => (s ? { ...s, shortlist: event.shortlist } : s))
           case 'message':
             setBusy(false)
-            return setItems((prev) => [...prev, { kind: 'agent', id: nextId(), text: event.text }])
+            // A tag the transcript already holds is a rewind, not a repeat:
+            // going back through the interview re-asks an earlier question,
+            // and everything from its first asking onwards — the old ask, the
+            // answer, the questions after it — is the branch being abandoned.
+            return setItems((prev) => {
+              const item: ChatItem = { kind: 'agent', id: nextId(), text: event.text, tag: event.tag }
+              if (event.tag) {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  const it = prev[i]
+                  if (it?.kind === 'agent' && it.tag === event.tag) {
+                    return [...prev.slice(0, i), item]
+                  }
+                }
+              }
+              return [...prev, item]
+            })
           case 'step':
             return setItems((prev) => [
               ...prev,

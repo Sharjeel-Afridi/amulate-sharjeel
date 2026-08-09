@@ -199,52 +199,6 @@ export const QUESTIONS: Question[] = [
   },
 ]
 
-/**
- * The preference field a question fills.
- *
- * Every topic but `dealbreakers` names a `Preferences` key — that one produces
- * criteria instead, so it has no field and can never be considered already known.
- */
-function topicField(q: Question): keyof Preferences | undefined {
-  return q.topic === 'dealbreakers' ? undefined : (q.topic as keyof Preferences)
-}
-
-/**
- * The preference keys one answered question wrote — the undo counterpart of
- * `answerToPreferences`. Derived from the question's topic rather than kept as a
- * second switch, so going back can never clear a different field than answering
- * set. Dealbreakers wrote criteria rather than a field, so they come back empty
- * and the caller strips the exclusions itself.
- */
-export function questionPreferenceKeys(questionId: string): (keyof Preferences)[] {
-  const q = questionById(questionId)
-  const field = q ? topicField(q) : undefined
-  return field ? [field] : []
-}
-
-/** Whether a question is still worth putting to the user. */
-function isPending(q: Question, prefs: Preferences, answered: Set<string>): boolean {
-  if (answered.has(q.id)) return false
-  if (q.appliesTo && prefs.mode && q.appliesTo !== prefs.mode) return false
-  // Mode gates every mode-specific question, so it must be answered first.
-  if (q.appliesTo && !prefs.mode) return false
-  // Already told us — in an opening sentence, or anywhere else in the chat.
-  // Asking again reads as not having listened, and it is the single most common
-  // complaint about scripted interviews.
-  const field = topicField(q)
-  if (field && prefs[field] !== undefined) return false
-  return true
-}
-
-/** The next question worth asking, respecting mode. Undefined means done. */
-export function nextQuestion(prefs: Preferences, answered: Set<string>): Question | undefined {
-  return QUESTIONS.find((q) => isPending(q, prefs, answered))
-}
-
-export function questionsRemaining(prefs: Preferences, answered: Set<string>): number {
-  return QUESTIONS.filter((q) => isPending(q, prefs, answered) && q.optional !== true).length
-}
-
 /** What one answered question contributes. */
 export interface AnswerOutcome {
   patch: Preferences
@@ -500,7 +454,26 @@ export interface SpecSheetRow {
   max: number
   step: number
   unit: string
+  /**
+   * Wants the full width of a multi-column form.
+   *
+   * The interview lays the sheet out as a grid of fields, two to a line. Most
+   * answers are one value off a short list and pair up happily; a sentence and a
+   * list of dealbreakers do not, and clipping either is how the form loses what
+   * the user actually said.
+   */
+  wide: boolean
 }
+
+/**
+ * Answers that take the whole line rather than half of one.
+ *
+ * Only the dealbreakers. Both modes emit exactly ten other rows, so one
+ * full-width row at the end leaves five clean pairs above it and no orphan
+ * half-row anywhere in the grid — which is what a second wide row would create,
+ * since a spanning row cannot sit beside anything.
+ */
+const WIDE_ROWS = new Set(['dealbreakers'])
 
 /** The label an option list gives a raw value, falling back to the value. */
 function optionLabel(questionId: string, value: string): string {
@@ -539,6 +512,7 @@ export function specSheet(prefs: Preferences, criteria: Criterion[]): SpecSheetR
       max: q?.max ?? 0,
       step: q?.step ?? 1,
       unit: q?.unit ?? '',
+      wide: WIDE_ROWS.has(questionId),
     }
   }
 
@@ -618,25 +592,3 @@ export function specSheet(prefs: Preferences, criteria: Criterion[]): SpecSheetR
   return rows
 }
 
-/**
- * A one-line spec the agent states back before searching.
- *
- * Soft criteria are listed too, and say so. Dropping them was tempting — this is
- * the "conditions" list — but the budget is usually soft, and a spec sheet that
- * silently omits the budget the user just set is the one omission they will
- * notice. Saying which lines are negotiable is also what makes the shortlist
- * legible when an over-budget car turns up on it.
- */
-export function describeSpecFull(prefs: Preferences, criteria: Criterion[]): string[] {
-  const lines: string[] = []
-  lines.push(prefs.mode === 'buy' ? 'Buying' : 'Renting')
-  if (prefs.useCase) lines.push(`For: ${prefs.useCase}`)
-  for (const c of criteria) {
-    const mark = c.kind === 'exclusion' ? '✕' : c.kind === 'requirement' ? '✓' : '~'
-    const soft = c.kind === 'preference' ? ' — preferred, not required' : ''
-    lines.push(`${mark} ${c.label}${soft}`)
-  }
-  if (prefs.targetDate) lines.push(`From ${prefs.targetDate}`)
-  if (prefs.returnDate) lines.push(`Until ${prefs.returnDate}`)
-  return lines
-}

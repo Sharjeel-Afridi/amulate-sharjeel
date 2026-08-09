@@ -7,6 +7,11 @@ const FOLLOW_THRESHOLD = 96
  * Keeps a scroller pinned to the bottom while the user is following along, and
  * gets out of the way the moment they scroll up to re-read something.
  *
+ * `enabled` exists because following-the-bottom is right for a transcript and
+ * wrong for a form: the interview is one tall sheet, and pinning it to the
+ * bottom opens the session on the Dealbreakers row with the first question
+ * somewhere above the fold.
+ *
  * Watching the message count is not enough here. The conversation hosts MCP App
  * iframes that report their own height after mounting, and again on every step
  * the widget advances through — each one a layout change that arrives well after
@@ -14,15 +19,18 @@ const FOLLOW_THRESHOLD = 96
  * tracks them; a mutation observer catches nodes that change size without the
  * scroller itself resizing.
  */
-export function useStickyScroll<T extends HTMLElement>() {
+export function useStickyScroll<T extends HTMLElement>(enabled = true) {
   const ref = useRef<T | null>(null)
   const followingRef = useRef(true)
 
-  const toBottom = useCallback((behavior: ScrollBehavior) => {
-    const el = ref.current
-    if (!el || !followingRef.current) return
-    el.scrollTo({ top: el.scrollHeight, behavior })
-  }, [])
+  const toBottom = useCallback(
+    (behavior: ScrollBehavior) => {
+      const el = ref.current
+      if (!el || !enabled || !followingRef.current) return
+      el.scrollTo({ top: el.scrollHeight, behavior })
+    },
+    [enabled],
+  )
 
   useEffect(() => {
     const el = ref.current

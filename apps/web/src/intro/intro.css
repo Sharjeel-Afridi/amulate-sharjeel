@@ -350,6 +350,30 @@
   justify-content: space-between;
   gap: 24px;
 }
+.intro__foot-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Legally required, visually subordinate to everything else down here. */
+.intro__credit {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: 0.72;
+  /* Wide enough to stay on one line on a desktop viewport; the flex row still
+     shrinks it and lets it wrap on narrow ones. */
+  max-width: 104ch;
+}
+.intro__credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.intro__credit a:hover { color: var(--text); }
 
 /* Three claims the product can actually back up. The landing page was a title
    over a large empty pane; saying what the thing does costs one row. */
@@ -379,6 +403,19 @@
 }
 
 /* ------------------------------------------------------------------- cue */
+
+/* Ignite and rev sit on one line; the row owns the spacing the cue used to. */
+.intro__controls {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.intro__controls .intro__cue {
+  margin-top: 0;
+  align-self: auto;
+}
 
 .intro__cue {
   margin-top: 12px;
@@ -460,6 +497,49 @@
   color: var(--muted);
 }
 
+/* Quieter than the cue — same shape language, none of the pull. */
+.intro__rev {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(11, 12, 14, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+    color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.intro__rev:hover {
+  color: var(--text);
+  background: rgba(20, 22, 26, 0.55);
+  border-color: var(--accent-dim, rgba(200, 255, 61, 0.4));
+}
+.intro__rev:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Glow rides the real rev envelope, so it keeps burning for a beat after
+   release exactly as the engine note does. */
+.intro__rev--held {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent-glow),
+    0 0 26px rgba(200, 255, 61, calc(0.05 + var(--rev, 0) * 0.35));
+}
+.intro__rev-copy {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .intro__key,
 .intro__pad {
   display: grid;
@@ -477,13 +557,28 @@
   animation: intro-nudge 2.4s var(--ease) infinite;
 }
 .intro__cue--held .intro__key,
-.intro__cue--held .intro__pad {
+.intro__cue--held .intro__pad,
+.intro__rev--held .intro__key,
+.intro__rev--held .intro__pad {
   animation: none;
   transform: translateY(2px);
   border-bottom-width: 1px;
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+}
+
+/* A word, not a glyph. The nudge belongs to the primary cue only — two things
+   bobbing for attention is one too many. */
+.intro__key--wide,
+.intro__pad--wide {
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  animation: none;
 }
 
 /* A single hint every couple of seconds — enough to read as "press me". */

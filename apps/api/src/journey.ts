@@ -5,30 +5,26 @@ import {
   type Preferences,
   type RankedListing,
   assess,
-  missingFields,
   money,
   screen,
 } from '@car/shared'
 import {
   buildCarDetailSurface,
   buildCatalogueSurface,
+  buildInterviewFormSurface,
   buildJourneySurface,
-  buildQuestionSurface,
   buildSearchingSurface,
-  buildSpecSurface,
+  interviewFormData,
 } from './surfaces.js'
 import {
   answerToPreferences,
   dealbreakerCriteria,
-  describeSpecFull,
-  nextQuestion,
   questionById,
-  questionPreferenceKeys,
-  questionsRemaining,
   requirementCriteria,
 } from './interview.js'
 import { callToolForApp, callToolJson } from './mcp.js'
 import type { TurnContext } from './driver.js'
+import { Kind, annotate, semconv, setOutput, withSpan } from './otel/index.js'
 import { rank } from './ranking.js'
 
 /**
@@ -48,16 +44,6 @@ import { rank } from './ranking.js'
  * Both drivers share this. The scripted one adds regex extraction for typed
  * text; the model-backed one adds an agent turn. The journey itself is the same.
  */
-
-/** Records one answered question and closes it out. */
-export function recordAnswer(ctx: TurnContext, questionId: string, raw: unknown): void {
-  applyAnswer(ctx, questionId, raw)
-
-  ctx.patchInterview({
-    answered: [...ctx.state.interview.answered, questionId],
-    pending: undefined,
-  })
-}
 
 /**
  * Writes one answer into preferences and criteria.
@@ -120,6 +106,11 @@ export function editSpec(ctx: TurnContext, questionId: string, raw: unknown): vo
   rebuildCriteria(ctx)
   ctx.patchInterview({ dirty: true })
   ctx.a2ui(buildJourneySurface(ctx.state))
+
+  // The form and the drawer are two views of one sheet, so an edit in either has
+  // to reach both. Values only — re-sending the components would remount the
+  // inputs and take the caret with them.
+  if (ctx.state.phase === 'interview') ctx.a2ui(interviewFormData(ctx.state))
 }
 
 /**
@@ -144,93 +135,18 @@ function rebuildCriteria(ctx: TurnContext): void {
   ])
 }
 
-/** Ask the next question, or close the interview and present the spec. */
-export function advance(ctx: TurnContext): void {
-  const answered = new Set(ctx.state.interview.answered)
-  const question = nextQuestion(ctx.state.preferences, answered)
-
-  ctx.a2ui(buildJourneySurface(ctx.state))
-
-  if (question) {
-    const left = questionsRemaining(ctx.state.preferences, answered)
-    ctx.patchInterview({ pending: question.id })
-    ctx.say(question.ask)
-    ctx.a2ui(buildQuestionSurface(question, { canGoBack: ctx.state.interview.answered.length > 0 }))
-    if (left > 1) ctx.step(`${left - 1} more to go`)
-    return
-  }
-
-  ctx.patchInterview({ complete: true })
-  showSpec(ctx)
-}
-
 /**
- * Steps the interview back to the previous question.
+ * Puts the whole interview on screen.
  *
- * Undo works by erasure rather than a history stack: popping the question from
- * `answered` and clearing the field it wrote makes `isPending` true again, so
- * `advance` re-asks the same question with a fresh control — one mechanism for
- * forward and back, nothing new to drift.
- *
- * Going back also reopens the interview (`complete` and `confirmed` off),
- * because a changed answer invalidates any spec already shown. Popping `mode`
- * can leave later mode-gated answers lingering; clearing just the popped
- * question is the contract, and the spec sheet keeps the rest editable.
+ * There is no next question to choose any more — every row is already visible,
+ * so this just rebuilds the sheet from current state. Both the drawer and the
+ * form render from the same `specSheet`, which is why answering by typing and
+ * answering by picking end up in exactly the same place.
  */
-export function goBackQuestion(ctx: TurnContext): void {
-  const answered = ctx.state.interview.answered
-  const last = answered[answered.length - 1]
-  if (!last) {
-    ctx.say("We're already at the first question.")
-    return
-  }
-
-  ctx.patchInterview({
-    answered: answered.slice(0, -1),
-    pending: undefined,
-    complete: false,
-    confirmed: false,
-  })
-
-  const wrote = questionPreferenceKeys(last)
-  if (wrote.length > 0) ctx.clearPreferences(wrote)
-
-  if (last === 'dealbreakers') {
-    // Dealbreakers wrote exclusions rather than a preference field, so undoing
-    // them means dropping the exclusions — and the strict-budget marker, which
-    // rides in notes because it shapes how the budget criterion is built.
-    ctx.setCriteria(ctx.state.criteria.filter((c) => c.kind !== 'exclusion'))
-    ctx.patchPreferences({
-      notes: (ctx.state.preferences.notes ?? []).filter((n) => n !== 'strict-budget'),
-    })
-  }
-
-  ctx.step('Went back a question')
-  advance(ctx)
-}
-
-/**
- * The gate: nothing is searched until the user approves this.
- *
- * Gaps are reported rather than re-asked. "Not sure — help me choose" is a valid
- * answer to the category question that deliberately sets no category, so looping
- * until every required field is filled would never terminate. The spec on screen
- * is the real safety net: a missing line is visible, and the user can correct it
- * before anything is searched.
- */
-export function showSpec(ctx: TurnContext): void {
+export function showInterviewForm(ctx: TurnContext): void {
   rebuildCriteria(ctx)
-  const criteria = ctx.state.criteria
-
-  const gaps = missingFields(ctx.state.preferences)
-  if (gaps.length > 0) ctx.step('Spec has gaps', `no ${gaps.join(', ')} — searching without ${gaps.length === 1 ? 'it' : 'them'}`)
-
-  ctx.say("That's everything I need. Here's the spec I'll search on — change anything before I start.")
-  ctx.a2ui(
-    buildSpecSurface(describeSpecFull(ctx.state.preferences, criteria), {
-      canGoBack: ctx.state.interview.answered.length > 0,
-    }),
-  )
+  ctx.a2ui(buildJourneySurface(ctx.state))
+  ctx.a2ui(buildInterviewFormSurface(ctx.state))
 }
 
 export interface ResearchSummary {
@@ -332,7 +248,45 @@ function stretchCount(shortlist: RankedListing[], criteria: Criterion[]): number
  * writes the reply itself from the returned summary — the same results described
  * twice in two voices reads as a bug.
  */
+/**
+ * Traced wrapper. The work is `research` below; this only draws the span.
+ *
+ * Split rather than instrumented inline because research is the one step that
+ * runs identically from a typed instruction, a tapped "confirm spec" and a
+ * "search again" — so it is the span you compare across those three paths, and
+ * it needs to exist whichever one opened it.
+ */
 export async function runResearch(
+  ctx: TurnContext,
+  opts: { narrate?: boolean; ranker?: Ranker } = {},
+): Promise<ResearchSummary> {
+  return withSpan(
+    'research',
+    {
+      kind: Kind.Chain,
+      input: {
+        preferences: ctx.state.preferences,
+        criteria: ctx.state.criteria.map((c) => `${c.kind}:${c.label}`),
+      },
+      attributes: { [semconv.CAR_PHASE]: 'research' },
+    },
+    async () => {
+      const summary = await research(ctx, opts)
+      annotate({
+        [semconv.CAR_SHORTLIST_SIZE]: summary.top.length,
+        'car.qualified': summary.qualified,
+        'car.ruled_out': summary.ruledOut,
+        ...(summary.bindingConstraint
+          ? { 'car.binding_constraint': summary.bindingConstraint.label }
+          : {}),
+      })
+      setOutput(summary)
+      return summary
+    },
+  )
+}
+
+async function research(
   ctx: TurnContext,
   { narrate = true, ranker = scorerRanker }: { narrate?: boolean; ranker?: Ranker } = {},
 ): Promise<ResearchSummary> {
@@ -365,9 +319,20 @@ export async function runResearch(
     relaxed: result.relaxed,
   })
 
+  // Lead with what was actually searched, not with what survived the category
+  // filter. The old label opened on the post-filter count, so a thin category
+  // reported "Screened 10 candidates" and made a 290-listing marketplace read
+  // as ten cars — the search had scanned the whole pool to arrive at those ten.
+  // The narrowing is a step worth naming, not the headline.
+  const narrowing = [
+    prefs.category ? `${result.matched} in your category` : undefined,
+    result.listings.length < result.matched ? `${result.listings.length} screened in detail` : undefined,
+    ...attribution.map((a) => `${a.criterion.label} removed ${a.eliminated}`),
+  ].filter(Boolean)
+
   ctx.step(
-    `Screened ${result.listings.length} candidates → ${qualified.length} qualify`,
-    attribution.map((a) => `${a.criterion.label} removed ${a.eliminated}`).join(' · ') || 'nothing excluded',
+    `Scanned ${result.totalScanned} ${prefs.mode === 'buy' ? 'cars for sale' : 'rentals'} → ${qualified.length} qualify`,
+    narrowing.length > 0 ? narrowing.join(' · ') : 'nothing excluded',
   )
 
   const binding = attribution[0]
@@ -406,10 +371,41 @@ export async function runResearch(
     return { qualified: 0, ruledOut: ruledOut.length, bindingConstraint: binding, top: [] }
   }
 
-  const { shortlist, summary, rankedBy } = await ranker(
-    qualified.map((a) => a.listing),
-    prefs,
-    ctx.state.criteria,
+  /*
+   * `rankedBy` is the single most useful attribute in this trace.
+   *
+   * The ranker falls back to the deterministic scorer whenever the model is
+   * throttled, times out or returns something unparseable — deliberately, so the
+   * stage is never empty. But that degradation is invisible in the product: the
+   * user still gets eight ranked cars with rationales. Recording which path ran
+   * is what turns "the explanations felt generic today" into a filterable fact.
+   */
+  const { shortlist, summary, rankedBy } = await withSpan(
+    'rank',
+    {
+      kind: Kind.Chain,
+      attributes: { [semconv.CAR_CANDIDATES]: qualified.length },
+    },
+    async () => {
+      const ranked = await ranker(
+        qualified.map((a) => a.listing),
+        prefs,
+        ctx.state.criteria,
+      )
+      annotate({
+        [semconv.CAR_RANKED_BY]: ranked.rankedBy,
+        [semconv.CAR_SHORTLIST_SIZE]: ranked.shortlist.length,
+      })
+      setOutput(
+        ranked.shortlist.map((r) => ({
+          id: r.listing.id,
+          rank: r.rank,
+          score: r.score,
+          rationale: r.rationale,
+        })),
+      )
+      return ranked
+    },
   )
 
   const stretched = stretchCount(shortlist, ctx.state.criteria)

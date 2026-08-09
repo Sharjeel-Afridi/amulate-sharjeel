@@ -12,4 +12,12 @@ import { loadEnv } from './env.js'
  */
 loadEnv()
 
+/*
+ * Tracing comes up next, and for the same hoisting reason: the OTel provider has
+ * to be registered globally before any module resolves a tracer, or every span
+ * built at module scope goes to the no-op implementation instead.
+ */
+const { startTracing } = await import('./otel/index.js')
+startTracing()
+
 await import('./index.js')

@@ -1,5 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SpanStatusCode } from '@opentelemetry/api'
+import { Kind, semconv, setOutput, withSpan } from './otel/index.js'
 
 /**
  * The API is the only MCP client in the system.
@@ -51,16 +53,48 @@ export interface ToolCallOutcome {
   isError: boolean
 }
 
+/**
+ * Every marketplace tool call, traced.
+ *
+ * This is the only path to the marketplace, including for calls that originate
+ * in an MCP App iframe — so one span here covers the tool traffic the model
+ * never chose, which the Agents SDK bridge cannot see by definition. Without it
+ * a booking made by tapping through the UI shows as a gap in the trace.
+ */
 export async function callTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<ToolCallOutcome> {
-  const c = await mcp()
-  const result = (await c.callTool({ name, arguments: args })) as {
-    content?: ToolContent[]
-    isError?: boolean
-  }
-  return { content: result.content ?? [], isError: Boolean(result.isError) }
+  return withSpan(
+    `mcp.${name}`,
+    {
+      kind: Kind.Tool,
+      observation: 'tool',
+      input: args,
+      attributes: { [semconv.TOOL_NAME]: name, 'mcp.server': MCP_URL },
+    },
+    async (span) => {
+      const c = await mcp()
+      const result = (await c.callTool({ name, arguments: args })) as {
+        content?: ToolContent[]
+        isError?: boolean
+      }
+      const outcome = { content: result.content ?? [], isError: Boolean(result.isError) }
+
+      // A tool that reports failure in its payload rather than by throwing would
+      // otherwise show as a green span, which is the most misleading thing a
+      // trace can do.
+      span?.setAttribute('mcp.is_error', outcome.isError)
+      setOutput(outcome.content)
+      if (outcome.isError) {
+        span?.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: outcome.content.find((c) => c.type === 'text')?.text ?? `tool ${name} failed`,
+        })
+      }
+      return outcome
+    },
+  )
 }
 
 /** Most marketplace tools answer with a single JSON text block. */

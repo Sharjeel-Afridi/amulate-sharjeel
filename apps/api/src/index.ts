@@ -7,15 +7,15 @@ import { type ServerEvent, sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
 import { LlmAgentDriver, readAgentConfig } from './agent-driver.js'
 import type { AgentDriver } from './driver.js'
+import { readOtelConfig, recordStep, tracingEnabled, withTurn } from './otel/index.js'
 import { ScriptedDriver } from './scripted-driver.js'
 import { createSession, emit, getSession, subscribe, update } from './sessions.js'
 import {
   buildCatalogueSurface,
+  buildInterviewFormSurface,
   buildJourneySurface,
-  buildQuestionSurface,
   initSurfaces,
 } from './surfaces.js'
-import { nextQuestion } from './interview.js'
 
 const PORT = Number(process.env.API_PORT ?? 8080)
 
@@ -74,8 +74,19 @@ function makeContext(state: SessionState): TurnContext {
   return {
     sessionId: id,
     state,
-    say: (text) => send({ type: 'message', text }),
-    step: (label, detail) => send({ type: 'step', label, detail }),
+    say: (text, tag) => send(tag ? { type: 'message', text, tag } : { type: 'message', text }),
+    /*
+     * Reasoning chips go to the browser and to the trace.
+     *
+     * One hook covers every `ctx.step()` call site in both drivers, and these
+     * are already the app's own account of what it just did — which makes them
+     * the closest thing the deterministic path has to a narrated reasoning
+     * trace, for free.
+     */
+    step: (label, detail) => {
+      recordStep(label, detail)
+      send({ type: 'step', label, detail })
+    },
     a2ui: (messages: A2uiMessage[]) => send({ type: 'a2ui', messages }),
     mcpApp: (toolName, html) => send({ type: 'mcpApp', toolName, html }),
     setPhase: (phase: Phase) => {
@@ -133,6 +144,9 @@ app.get('/api/health', async (_req, res) => {
     agentAvailable: Boolean(agentDriver),
     agentName: agentDriver?.name ?? null,
     mcp: await health(),
+    // Reported because "tracing is off" and "tracing is broken" look identical
+    // from the outside, and the difference is the first thing to establish.
+    tracing: { enabled: tracingEnabled(), backend: readOtelConfig().backend },
   })
 })
 
@@ -210,16 +224,20 @@ app.get('/api/session/:id/stream', (req, res) => {
   const unsubscribe = subscribe(req.params.id, (event) => res.write(sseFrame(event)))
 
   // Open the interview as soon as someone is listening, rather than waiting for
-  // the user to guess that they should type something first.
-  if (state.interview.answered.length === 0 && !state.interview.pending) {
-    const first = nextQuestion(state.preferences, new Set())
-    if (first) {
-      update(req.params.id, (s) => {
-        s.interview.pending = first.id
-      })
-      res.write(sseFrame({ type: 'message', text: `Let's find you the right car. ${first.ask}` }))
-      res.write(sseFrame({ type: 'a2ui', messages: buildQuestionSurface(first) }))
-    }
+  // the user to guess that they should type something first. The greeting is
+  // tagged so a reconnect replaces it rather than stacking a second copy.
+  if (state.phase === 'interview') {
+    res.write(
+      sseFrame({
+        type: 'message',
+        // Short on purpose: the client sets the newest interview line in display
+        // type, and a paragraph at that size fills the screen before the form
+        // it is introducing. The sheet's own lead carries the instructions.
+        text: "Let's find you the right car.",
+        tag: 'greeting',
+      }),
+    )
+    res.write(sseFrame({ type: 'a2ui', messages: buildInterviewFormSurface(state) }))
   }
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15_000)
 
@@ -240,8 +258,19 @@ app.post('/api/session/:id/message', async (req, res) => {
   res.json({ accepted: true })
 
   const ctx = makeContext(state)
+  const driver = driverFor(state)
   try {
-    await driverFor(state).handleUserMessage(ctx, text)
+    await withTurn(
+      {
+        sessionId: state.sessionId,
+        trigger: 'message',
+        label: 'turn: message',
+        driver: driver.name,
+        phase: state.phase,
+        input: text,
+      },
+      () => driver.handleUserMessage(ctx, text),
+    )
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',
@@ -264,8 +293,22 @@ app.post('/api/session/:id/action', async (req, res) => {
   res.json({ accepted: true })
 
   const ctx = makeContext(state)
+  const driver = driverFor(state)
   try {
-    await driverFor(state).handleUiAction(ctx, name, context)
+    // The action name is bounded by the set of controls the surfaces render, so
+    // it is safe in the span name — and it is the one thing you want to group by
+    // when asking which control is slow.
+    await withTurn(
+      {
+        sessionId: state.sessionId,
+        trigger: 'action',
+        label: `turn: action ${name}`,
+        driver: driver.name,
+        phase: state.phase,
+        input: context,
+      },
+      () => driver.handleUiAction(ctx, name, context),
+    )
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',
@@ -291,13 +334,30 @@ app.post('/api/session/:id/tool', async (req, res) => {
   const args = (req.body?.arguments ?? {}) as Record<string, unknown>
   if (!name) return res.status(400).json({ error: 'tool name required' })
 
+  const driver = driverFor(state)
   try {
-    const result = await callToolJson<Record<string, unknown>>(name, args)
-    res.json({ content: [{ type: 'text', text: JSON.stringify(result) }] })
+    // Wrapped as a turn because that is what it is from the journey's point of
+    // view: a submitted booking or a confirmed payment advances the same state
+    // machine a typed message would, and tracing it separately would leave the
+    // transactional half of the product invisible.
+    await withTurn(
+      {
+        sessionId: state.sessionId,
+        trigger: 'app-tool',
+        label: `turn: app-tool ${name}`,
+        driver: driver.name,
+        phase: state.phase,
+        input: args,
+      },
+      async () => {
+        const result = await callToolJson<Record<string, unknown>>(name, args)
+        res.json({ content: [{ type: 'text', text: JSON.stringify(result) }] })
 
-    const ctx = makeContext(state)
-    await driverFor(state).handleAppToolResult(ctx, name, result)
-    emit(state.sessionId, { type: 'idle' })
+        const ctx = makeContext(state)
+        await driver.handleAppToolResult(ctx, name, result)
+        emit(state.sessionId, { type: 'idle' })
+      },
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'tool call failed'
     res.status(500).json({ error: message })

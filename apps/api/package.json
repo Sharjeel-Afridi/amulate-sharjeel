@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "eval": "tsx src/evals/run.ts",
+    "eval:judge": "tsx src/evals/judge-check.ts"
   },
   "dependencies": {
     "@car/catalog": "*",
@@ -14,6 +16,12 @@
     "@car/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@openai/agents": "^0.14.3",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.221.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "openai": "^6.49.0",
