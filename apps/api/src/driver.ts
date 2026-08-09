@@ -34,8 +34,15 @@ export interface AgentDriver {
 export interface TurnContext {
   readonly sessionId: string
   readonly state: SessionState
-  /** Emit a conversational turn. */
-  say(text: string): void
+  /**
+   * Emit a conversational turn.
+   *
+   * A `tag` gives the message an identity: emitting the same tag again tells
+   * the client to rewind the transcript to the earlier occurrence rather than
+   * append. The interview tags each question `ask:<id>`, so re-asking after
+   * "back" replaces the abandoned branch instead of stacking beneath it.
+   */
+  say(text: string, tag?: string): void
   /** Emit a collapsed reasoning chip — what the agent just did and why. */
   step(label: string, detail?: string): void
   /** Push declarative UI to one of the A2UI surfaces. */

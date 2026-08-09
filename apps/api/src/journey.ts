@@ -154,7 +154,10 @@ export function advance(ctx: TurnContext): void {
   if (question) {
     const left = questionsRemaining(ctx.state.preferences, answered)
     ctx.patchInterview({ pending: question.id })
-    ctx.say(question.ask)
+    // Tagged with the question's identity: if this ask has appeared before —
+    // the user came back to it — the client rewinds the thread to that point,
+    // so the questions walked past on the way stop reading as answered.
+    ctx.say(question.ask, `ask:${question.id}`)
     ctx.a2ui(buildQuestionSurface(question, { canGoBack: ctx.state.interview.answered.length > 0 }))
     if (left > 1) ctx.step(`${left - 1} more to go`)
     return
@@ -205,7 +208,9 @@ export function goBackQuestion(ctx: TurnContext): void {
     })
   }
 
-  ctx.step('Went back a question')
+  // No "went back" step: the re-asked question carries its own tag, and the
+  // client rewinds the transcript to its first asking — a step emitted here
+  // would land inside the span being removed and flash for one frame.
   advance(ctx)
 }
 

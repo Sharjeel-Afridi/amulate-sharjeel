@@ -74,7 +74,7 @@ function makeContext(state: SessionState): TurnContext {
   return {
     sessionId: id,
     state,
-    say: (text) => send({ type: 'message', text }),
+    say: (text, tag) => send(tag ? { type: 'message', text, tag } : { type: 'message', text }),
     step: (label, detail) => send({ type: 'step', label, detail }),
     a2ui: (messages: A2uiMessage[]) => send({ type: 'a2ui', messages }),
     mcpApp: (toolName, html) => send({ type: 'mcpApp', toolName, html }),
@@ -217,7 +217,12 @@ app.get('/api/session/:id/stream', (req, res) => {
       update(req.params.id, (s) => {
         s.interview.pending = first.id
       })
-      res.write(sseFrame({ type: 'message', text: `Let's find you the right car. ${first.ask}` }))
+      // Tagged as the first question's asking: this greeting *is* the mode
+      // question, and without the tag, backing all the way up appends a second
+      // copy of it under this one instead of rewinding the thread to the top.
+      res.write(
+        sseFrame({ type: 'message', text: `Let's find you the right car. ${first.ask}`, tag: `ask:${first.id}` }),
+      )
       res.write(sseFrame({ type: 'a2ui', messages: buildQuestionSurface(first) }))
     }
   }
