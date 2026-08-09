@@ -228,6 +228,17 @@ function Conversation({
     return undefined
   }, [items])
 
+  // The newest thing the agent said, while the interview is running, is the
+  // question being asked — so it is set in display type rather than left to look
+  // like one more line of chat. Everything above it recedes to transcript.
+  const askId = useMemo(() => {
+    if (phase !== 'interview') return undefined
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i]?.kind === 'agent') return items[i]!.id
+    }
+    return undefined
+  }, [items, phase])
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     const text = draft.trim()
@@ -238,20 +249,19 @@ function Conversation({
 
   return (
     <section className="panel panel--chat" aria-label="Conversation">
-      <header className="panel__head">
-        <span className="panel__title">Concierge</span>
-        <span className="status" style={{ marginLeft: 'auto' }}>
-          <span className={`status__dot${busy ? ' status__dot--busy' : ''}`} aria-hidden="true" />
-          {busy ? 'Working' : 'Ready'}
-        </span>
-      </header>
-
       <div className="panel__body" ref={scrollerRef}>
         <div className="chat">
           {items.map((item) => {
             switch (item.kind) {
               case 'agent':
-                return <div className="msg msg--agent" key={item.id}>{item.text}</div>
+                return (
+                  <div
+                    className={`msg msg--agent${item.id === askId ? ' msg--ask' : ''}`}
+                    key={item.id}
+                  >
+                    {item.text}
+                  </div>
+                )
               case 'user':
                 return <div className="msg msg--user" key={item.id}>{item.text}</div>
               case 'error':
@@ -317,26 +327,28 @@ function Conversation({
 
 /* ---------------------------------------------------------------- stage */
 
+/**
+ * The ranked catalogue, given the whole window.
+ *
+ * No panel chrome and no tabs. Both used to be necessary when this shared the
+ * width with the conversation and had to host the spec sheet as well; now the
+ * spec lives in its own drawer and the cars get every pixel, which is what makes
+ * a photograph of a car read as a car rather than a thumbnail.
+ */
 function Stage({
   a2ui,
-  resultCount,
   onAction,
   onError,
 }: {
   a2ui: A2uiHostProps['messages']
-  resultCount: number
   onAction: (action: A2uiClientAction) => void
   onError: (e: unknown) => void
 }) {
-  const hasResults = resultCount > 0
-  const [tab, setTab] = useState<'matches' | 'spec'>('spec')
   const bodyRef = useRef<HTMLDivElement>(null)
 
   // The stage swaps whole views — searching, the ranked list, one car in full.
   // Each is a new page and belongs at the top; keeping the old scroll position
-  // opens a car's detail half way down its own specification. Counting the
-  // messages that actually rebuild the stage avoids reacting to the spec sheet
-  // filling in on the other tab.
+  // opens a car's detail half way down its own specification.
   const stageUpdates = useMemo(
     () =>
       a2ui.filter(
@@ -348,62 +360,134 @@ function Stage({
     bodyRef.current?.scrollTo({ top: 0, behavior: 'auto' })
   }, [stageUpdates])
 
-  // Results arriving is the moment the stage has something better to show than
-  // the spec, so it switches itself — once. A later manual switch back sticks.
-  const announced = useRef(false)
-  useEffect(() => {
-    if (hasResults && !announced.current) {
-      announced.current = true
-      setTab('matches')
-    }
-  }, [hasResults])
-
   return (
-    <section className="panel panel--stage" aria-label="Results">
-      <header className="panel__head">
-        <span className="panel__title">{tab === 'matches' ? 'Your matches' : 'Your spec'}</span>
-        <div className="tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'matches'}
-            className={`tab${tab === 'matches' ? ' tab--active' : ''}`}
-            onClick={() => setTab('matches')}
-            disabled={!hasResults}
-          >
-            Matches
-            {hasResults && <span className="tab__count">{resultCount}</span>}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'spec'}
-            className={`tab${tab === 'spec' ? ' tab--active' : ''}`}
-            onClick={() => setTab('spec')}
-          >
-            Your spec
-          </button>
-        </div>
-      </header>
-
-      <div className="panel__body" ref={bodyRef}>
-        {tab === 'matches' ? (
-          <A2uiHost messages={a2ui} surfaceId="stage" onAction={onAction} onError={onError} />
-        ) : (
-          <>
-            {/* The sheet is editable, so its actions have to reach the driver
-                like every other surface's do. */}
-            <A2uiHost messages={a2ui} surfaceId="journey" onAction={onAction} onError={onError} />
-            {!hasResults && (
-              <p className="empty__hint" style={{ marginTop: 'var(--s5)', maxWidth: '40ch' }}>
-                Answer the questions on the left and this fills in. Nothing is searched until
-                you approve the finished spec.
-              </p>
-            )}
-          </>
-        )}
+    <section className="stage" aria-label="Results" ref={bodyRef}>
+      <div className="stage__inner">
+        <A2uiHost messages={a2ui} surfaceId="stage" onAction={onAction} onError={onError} />
       </div>
     </section>
+  )
+}
+
+/**
+ * The conversation, reduced to a dock, while the catalogue has the window.
+ *
+ * The agent's summary of the results and the ability to answer it are not
+ * optional extras — "book the Volvo" is a supported way through this product,
+ * and the sentence explaining why one car placed first is the reason the ranking
+ * is trustworthy. Both survive the full-width view as a single strip.
+ */
+function Dock({
+  items,
+  busy,
+  onSend,
+}: {
+  items: ChatItem[]
+  busy: boolean
+  onSend: (text: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+
+  const latest = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      if (item?.kind === 'agent') return item.text
+    }
+    return undefined
+  }, [items])
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const text = draft.trim()
+    if (!text) return
+    onSend(text)
+    setDraft('')
+  }
+
+  return (
+    <div className="dock">
+      <div className="dock__inner">
+        {latest && (
+          <p className="dock__say">
+            <span className={`status__dot${busy ? ' status__dot--busy' : ''}`} aria-hidden="true" />
+            {latest}
+          </p>
+        )}
+        <form className="composer" onSubmit={submit}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Ask for a change, or say “book the first one”…"
+            aria-label="Message the agent"
+            autoComplete="off"
+          />
+          <button type="submit" disabled={!draft.trim()}>Send</button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------- spec drawer */
+
+/**
+ * The spec, docked out of the way.
+ *
+ * Once there are cars on screen the spec stops being the thing you are working
+ * on and becomes the thing you occasionally correct — so it earns a toggle
+ * rather than half the window. It stays mounted while closed: the surface is
+ * live and patched by the stream, and unmounting it would drop the edits made
+ * to a row the moment the drawer shut.
+ */
+function SpecDrawer({
+  open,
+  onClose,
+  a2ui,
+  onAction,
+  onError,
+}: {
+  open: boolean
+  onClose: () => void
+  a2ui: A2uiHostProps['messages']
+  onAction: (action: A2uiClientAction) => void
+  onError: (e: unknown) => void
+}) {
+  // Escape is the expected way out of anything that overlays.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  return (
+    <>
+      <div
+        className={`drawer__scrim${open ? ' drawer__scrim--on' : ''}`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        className={`drawer${open ? ' drawer--open' : ''}`}
+        aria-label="Your spec"
+        aria-hidden={!open}
+        inert={!open}
+      >
+        <header className="drawer__head">
+          <span className="panel__title">Your spec</span>
+          <button type="button" className="drawer__close" onClick={onClose} aria-label="Close spec">
+            ✕
+          </button>
+        </header>
+        <div className="drawer__body">
+          <p className="drawer__hint">
+            Change anything here, then search again. Every line is the answer the interview
+            recorded.
+          </p>
+          <A2uiHost messages={a2ui} surfaceId="journey" onAction={onAction} onError={onError} />
+        </div>
+      </aside>
+    </>
   )
 }
 
@@ -440,6 +524,21 @@ export function App() {
   const phase = state?.phase ?? 'interview'
   const mode: DriverMode = state?.mode ?? 'scripted'
 
+  // Two layouts, chosen by what the user is actually doing.
+  //
+  // `form` is one centred column: the interview, and later the booking and
+  // checkout widgets — both are a single task at a time and read better narrow.
+  // `browse` hands the whole window to the catalogue. Splitting the difference
+  // with two permanent columns is what made the question small and the cars
+  // small at the same time.
+  const view: 'form' | 'browse' = phase === 'research' || phase === 'recommend' ? 'browse' : 'form'
+
+  // A question reads best at a book's measure; a four-step booking widget with
+  // dates, extras and a card form does not. Same centred column, more of it.
+  const wide = phase === 'book' || phase === 'done'
+
+  const [specOpen, setSpecOpen] = useState(false)
+
   return (
     <>
       <div
@@ -452,7 +551,7 @@ export function App() {
         // owns the screen — ↑ is the only control that exists at that point.
         inert={entry === 'intro'}
       >
-        <main className="cockpit">
+        <main className={`cockpit cockpit--${view}${wide ? ' cockpit--wide' : ''}`}>
           <header className="topbar">
             <div className="brand">
               <span className="brand__mark" aria-hidden="true">C</span>
@@ -467,6 +566,14 @@ export function App() {
                 onChange={(next) => void setMode(next)}
               />
               <SpecChips preferences={state?.preferences ?? {}} />
+              <button
+                type="button"
+                className={`specbtn${specOpen ? ' specbtn--on' : ''}`}
+                aria-expanded={specOpen}
+                onClick={() => setSpecOpen((v) => !v)}
+              >
+                Your spec
+              </button>
             </div>
           </header>
 
@@ -480,24 +587,33 @@ export function App() {
           )}
 
           <div className="cockpit__body">
-            <Conversation
-              items={items}
-              busy={busy}
-              phase={phase}
-              guided={mode === 'scripted'}
-              a2ui={a2ui}
-              onSend={send}
-              onAction={onAction}
-              onCallTool={callTool}
-              onError={onError}
-            />
-            <Stage
-              a2ui={a2ui}
-              resultCount={state?.shortlist.length ?? 0}
-              onAction={onAction}
-              onError={onError}
-            />
+            {view === 'browse' ? (
+              <>
+                <Stage a2ui={a2ui} onAction={onAction} onError={onError} />
+                <Dock items={items} busy={busy} onSend={send} />
+              </>
+            ) : (
+              <Conversation
+                items={items}
+                busy={busy}
+                phase={phase}
+                guided={mode === 'scripted'}
+                a2ui={a2ui}
+                onSend={send}
+                onAction={onAction}
+                onCallTool={callTool}
+                onError={onError}
+              />
+            )}
           </div>
+
+          <SpecDrawer
+            open={specOpen}
+            onClose={() => setSpecOpen(false)}
+            a2ui={a2ui}
+            onAction={onAction}
+            onError={onError}
+          />
 
           {renderErrors.length > 0 && (
             <div className="render-errors" role="alert">

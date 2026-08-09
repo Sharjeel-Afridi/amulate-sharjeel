@@ -726,3 +726,158 @@
 }
 .a2ui-host .a2ui-specrow .a2ui-specrow__check:hover { background: rgba(255, 255, 255, 0.06); }
 .a2ui-host .a2ui-specrow .a2ui-specrow__check input { accent-color: var(--accent, #c8ff3d); margin: 0; }
+
+/* ==========================================================================
+   Full-width catalogue.
+   ==========================================================================
+   The stage now owns the window, so the leading cards lay out as a responsive
+   grid instead of a single stacked column, and the photograph gets real height.
+   The car was previously 124px tall in a 660px panel — a thumbnail of the one
+   thing the user is actually choosing between.
+
+   A2UI's Column sets its flex layout inline, so overriding it needs both
+   `!important` and a structural selector: this is the container that directly
+   holds the full-size cards, which is exactly the fan-out we want to re-lay.
+*/
+.stage .a2ui-host div:has(> .a2ui-carcard:not(.a2ui-carcard--compact)) {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 18px !important;
+  align-items: start;
+}
+
+/* The tail stays a single column of rows — it is a list, not a gallery. */
+.stage .a2ui-host div:has(> .a2ui-carcard--compact) {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+
+.stage .a2ui-host .a2ui-carcard__img { height: 216px; padding: 20px 26px 0; }
+.stage .a2ui-host .a2ui-carcard::before { height: 210px; }
+.stage .a2ui-host .a2ui-carcard::after { top: 206px; }
+.stage .a2ui-host .a2ui-carcard__body { padding: 16px 18px 18px; gap: 9px; }
+.stage .a2ui-host .a2ui-carcard__title { font-size: 18px; }
+.stage .a2ui-host .a2ui-carcard__subtitle { font-size: 12px; }
+.stage .a2ui-host .a2ui-pricebadge__amount { font-size: 21px; }
+
+/* The compact tail keeps its own proportions against the wider container. */
+.stage .a2ui-host .a2ui-carcard--compact .a2ui-carcard__img {
+  width: 132px;
+  height: 78px;
+  padding: 0;
+}
+.stage .a2ui-host .a2ui-carcard--compact .a2ui-carcard__title { font-size: 14.5px; }
+
+/* Headings on the stage, now that they head a page rather than a panel. */
+.stage .a2ui-host h4 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.stage .a2ui-host h5 { font-size: 13px; color: var(--faint, #6b7480); }
+
+/* One car in full — the detail view is a single column, centred. */
+.stage .a2ui-host div:has(> .a2ui-carcard):not(:has(> .a2ui-carcard + .a2ui-carcard)) {
+  display: block !important;
+}
+
+@media (max-width: 900px) {
+  .stage .a2ui-host div:has(> .a2ui-carcard:not(.a2ui-carcard--compact)) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Interview controls, scaled to the centred form.
+   ==========================================================================
+   The question is now display type, so chips at 12px and a grey Continue read
+   as a footnote to it. The library's variant classes are lost to the empty
+   class maps, so the submit button is identified structurally: it is the only
+   button on the interview surface that is not a chip.
+*/
+
+.interview .a2ui-host .chip {
+  font-size: 14.5px;
+  padding: 9px 18px;
+  border-radius: 999px;
+}
+
+.interview .a2ui-host button:not(.chip) {
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 14.5px;
+  font-weight: 600;
+  border-radius: 11px;
+  background: var(--accent, #c8ff3d);
+  border-color: var(--accent, #c8ff3d);
+  color: var(--accent-ink, #14200a);
+}
+.interview .a2ui-host button:not(.chip):hover {
+  filter: brightness(1.08);
+  border-color: var(--accent, #c8ff3d);
+  background: var(--accent, #c8ff3d);
+}
+
+/* Text, date and number answers get the same presence as the chips. */
+.interview .a2ui-host input[type='text'],
+.interview .a2ui-host input[type='date'],
+.interview .a2ui-host input[type='number'] {
+  height: 46px;
+  font-size: 15px;
+  padding: 0 14px;
+}
+.interview .a2ui-host input[type='range'] { height: 28px; }
+
+/* ==========================================================================
+   The spec sheet inside the drawer.
+   ==========================================================================
+   Label beside value works at panel width and fails at drawer width: a select
+   and a text input both clip rather than wrap, so "weekend trips down the coast
+   with the kids" became "weekend trip". Stacked, every value gets the full
+   width of the drawer and nothing is hidden.
+*/
+
+.drawer .a2ui-host .a2ui-specrow {
+  display: block;
+  padding: 11px 2px;
+}
+
+.drawer .a2ui-host .a2ui-specrow__label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__select,
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__input,
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__disclose,
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__multi,
+.drawer .a2ui-host .a2ui-specrow__value {
+  width: 100%;
+  max-width: none;
+  text-align: left;
+}
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__select { text-align-last: left; }
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__multi { align-items: stretch; }
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__measure { width: 100%; }
+
+/* At full width the controls read better with a visible field than as bare
+   text — there is no value column left for them to line up against. */
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__select,
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__input,
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__disclose {
+  padding: 7px 10px;
+  border-color: rgba(255, 255, 255, 0.1);
+  /* background-color, not the shorthand — the shorthand resets background-image
+     and takes the select's caret with it. */
+  background-color: rgba(0, 0, 0, 0.28);
+}
+.drawer .a2ui-host .a2ui-specrow .a2ui-specrow__select { padding-right: 24px; }
+
+/* "Search again" is the drawer's primary action. */
+.drawer .a2ui-host button:not(.a2ui-specrow__disclose) {
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
