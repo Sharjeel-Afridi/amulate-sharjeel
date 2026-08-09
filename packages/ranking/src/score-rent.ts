@@ -6,7 +6,7 @@ import {
   UNLIMITED_KM,
   budgetSub,
   daysBetween,
-  euro,
+  priceText,
   lowerIsBetter,
   plural,
   position,
@@ -50,8 +50,8 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
       sub: budgetSub(listing.monthlyRate, budget),
       detail:
         gap >= 0
-          ? `${euro(listing.monthlyRate)} a month, ${euro(gap)} inside your ${euro(budget)} ceiling`
-          : `${euro(listing.monthlyRate)} a month, ${euro(-gap)} over your ${euro(budget)} ceiling`,
+          ? `${priceText(listing.monthlyRate)} a month, ${priceText(gap)} inside your ${priceText(budget)} ceiling`
+          : `${priceText(listing.monthlyRate)} a month, ${priceText(-gap)} over your ${priceText(budget)} ceiling`,
     })
   } else {
     // No budget stated, so the rate is judged only against what else came back.
@@ -59,7 +59,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
       label: 'Monthly rate',
       weight: RENT_WEIGHTS.monthlyRate,
       sub: signed(lowerIsBetter(listing.monthlyRate, stats.monthlyRate)),
-      detail: `${euro(listing.monthlyRate)} a month, against ${euro(stats.monthlyRate.min)}–${euro(stats.monthlyRate.max)} here`,
+      detail: `${priceText(listing.monthlyRate)} a month, against ${priceText(stats.monthlyRate.min)}–${priceText(stats.monthlyRate.max)} here`,
     })
   }
 
@@ -103,7 +103,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
     label: 'Insurance excess',
     weight: RENT_WEIGHTS.excess,
     sub: signed(1 - position(listing.excess, 300, 1500)),
-    detail: `${euro(listing.excess)} insurance excess if anything happens`,
+    detail: `${priceText(listing.excess)} insurance excess if anything happens`,
   })
 
   out.push(...sharedContributions(listing, prefs, stats, RENT_WEIGHTS))

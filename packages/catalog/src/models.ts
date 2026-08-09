@@ -1,143 +1,14 @@
-import type { Category } from '@car/shared'
-
 /**
- * Ten brands per category, each with a real model name. Hand-written rather than
- * generated: plausible names are what make the demo read as a marketplace
- * instead of as lorem ipsum.
+ * The few things the scrape does not carry.
+ *
+ * The fleet itself is real and lives in `cars.json`; these are the two details
+ * an offer listing has no reason to publish — which branch you collect from, and
+ * which forecourt would sell you the same car. `enrich.ts` assigns them per
+ * offer, seeded, so they stay put between runs.
+ *
+ * German cities because that is where this fleet is: the inventory is Volkswagen,
+ * BMW, Opel, Škoda and Porsche, quoted to an international customer in dollars.
  */
-export const MODELS: Record<Category, Record<string, string>> = {
-  hatchback: {
-    Volkswagen: 'Golf',
-    Ford: 'Fiesta',
-    Toyota: 'Yaris',
-    Hyundai: 'i30',
-    Kia: 'Ceed',
-    'Škoda': 'Fabia',
-    Peugeot: '208',
-    Renault: 'Clio',
-    Seat: 'Ibiza',
-    Mazda: '2',
-  },
-  sedan: {
-    Toyota: 'Camry',
-    Volkswagen: 'Passat',
-    BMW: '3 Series',
-    'Mercedes-Benz': 'C-Class',
-    Audi: 'A4',
-    Hyundai: 'Elantra',
-    Kia: 'K5',
-    'Škoda': 'Octavia',
-    Mazda: '6',
-    Honda: 'Accord',
-  },
-  suv: {
-    Volvo: 'XC60',
-    Toyota: 'RAV4',
-    Volkswagen: 'Tiguan',
-    BMW: 'X3',
-    'Mercedes-Benz': 'GLC',
-    Audi: 'Q5',
-    Hyundai: 'Tucson',
-    Kia: 'Sportage',
-    'Škoda': 'Kodiaq',
-    'Land Rover': 'Discovery Sport',
-  },
-  crossover: {
-    Nissan: 'Qashqai',
-    Peugeot: '3008',
-    Renault: 'Captur',
-    Toyota: 'C-HR',
-    Ford: 'Puma',
-    Hyundai: 'Kona',
-    Kia: 'Niro',
-    Seat: 'Arona',
-    'Citroën': 'C4',
-    Mazda: 'CX-30',
-  },
-  estate: {
-    Volvo: 'V60',
-    'Škoda': 'Superb Estate',
-    Volkswagen: 'Passat Variant',
-    Audi: 'A4 Avant',
-    BMW: '3 Series Touring',
-    'Mercedes-Benz': 'C-Class Estate',
-    Peugeot: '308 SW',
-    Opel: 'Astra Sports Tourer',
-    Seat: 'Leon Estate',
-    Ford: 'Focus Estate',
-  },
-  coupe: {
-    BMW: '4 Series',
-    Audi: 'A5',
-    'Mercedes-Benz': 'CLE',
-    Porsche: '718 Cayman',
-    Toyota: 'GR86',
-    Ford: 'Mustang',
-    Lexus: 'RC',
-    Jaguar: 'F-Type',
-    'Alfa Romeo': 'Giulia GT',
-    Nissan: 'Z',
-  },
-  convertible: {
-    Mazda: 'MX-5',
-    BMW: 'Z4',
-    'Mercedes-Benz': 'SL',
-    Audi: 'A5 Cabriolet',
-    Porsche: '911 Cabriolet',
-    Mini: 'Convertible',
-    Ford: 'Mustang Convertible',
-    Fiat: '500C',
-    Jaguar: 'F-Type Convertible',
-    Volkswagen: 'T-Roc Cabriolet',
-  },
-  pickup: {
-    Ford: 'Ranger',
-    Toyota: 'Hilux',
-    Nissan: 'Navara',
-    Volkswagen: 'Amarok',
-    Mitsubishi: 'L200',
-    Isuzu: 'D-Max',
-    SsangYong: 'Musso',
-    Ram: '1500',
-    Chevrolet: 'Colorado',
-    Jeep: 'Gladiator',
-  },
-  mpv: {
-    Volkswagen: 'Touran',
-    Ford: 'Tourneo Connect',
-    'Citroën': 'Berlingo',
-    Peugeot: 'Rifter',
-    Renault: 'Espace',
-    Opel: 'Zafira',
-    Toyota: 'Proace Verso',
-    Seat: 'Alhambra',
-    Dacia: 'Jogger',
-    'Mercedes-Benz': 'V-Class',
-  },
-  sports: {
-    Porsche: '911',
-    BMW: 'M4',
-    Audi: 'RS5',
-    'Mercedes-Benz': 'AMG C63',
-    Toyota: 'GR Supra',
-    Nissan: 'GT-R',
-    Jaguar: 'F-Type R',
-    'Alfa Romeo': 'Giulia Quadrifoglio',
-    Lotus: 'Emira',
-    Subaru: 'BRZ',
-  },
-}
-
-export const RENTAL_PROVIDERS = [
-  'Europcar',
-  'Sixt',
-  'Hertz',
-  'Avis',
-  'Enterprise',
-  'Green Motion',
-  'Drivalia',
-  'Alamo',
-] as const
 
 export const DEALERS = [
   'Autohaus Mitte',
@@ -159,15 +30,4 @@ export const LOCATIONS = [
   'Stuttgart',
   'Düsseldorf',
   'Leipzig',
-] as const
-
-export const COLOURS = [
-  'Pearl White',
-  'Midnight Black',
-  'Graphite Grey',
-  'Silver Metallic',
-  'Deep Blue',
-  'British Racing Green',
-  'Crimson Red',
-  'Sand Beige',
 ] as const

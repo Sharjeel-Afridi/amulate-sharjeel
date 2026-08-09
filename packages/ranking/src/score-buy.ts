@@ -6,7 +6,7 @@ import {
   REFERENCE_YEAR,
   budgetSub,
   clamp,
-  euro,
+  priceText,
   higherIsBetter,
   kms,
   lowerIsBetter,
@@ -55,15 +55,15 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
       sub: budgetSub(listing.price, budget),
       detail:
         gap >= 0
-          ? `${euro(listing.price)}, ${euro(gap)} inside your ${euro(budget)} budget`
-          : `${euro(listing.price)}, ${euro(-gap)} over your ${euro(budget)} budget`,
+          ? `${priceText(listing.price)}, ${priceText(gap)} inside your ${priceText(budget)} budget`
+          : `${priceText(listing.price)}, ${priceText(-gap)} over your ${priceText(budget)} budget`,
     })
   } else {
     out.push({
       label: 'Purchase price',
       weight: BUY_WEIGHTS.price,
       sub: signed(lowerIsBetter(listing.price, stats.price)),
-      detail: `${euro(listing.price)}, against ${euro(stats.price.min)}–${euro(stats.price.max)} here`,
+      detail: `${priceText(listing.price)}, against ${priceText(stats.price.min)}–${priceText(stats.price.max)} here`,
     })
   }
 
@@ -137,7 +137,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
     label: 'Finance monthly',
     weight: BUY_WEIGHTS.financeMonthly,
     sub: signed(lowerIsBetter(listing.financeMonthly, stats.financeMonthly)),
-    detail: `${euro(listing.financeMonthly)} a month over 48 months if financed`,
+    detail: `${priceText(listing.financeMonthly)} a month over 48 months if financed`,
   })
 
   out.push(...sharedContributions(listing, prefs, stats, BUY_WEIGHTS))

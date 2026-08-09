@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "enrich": "tsx src/enrich.ts",
     "verify": "tsx src/verify.ts"
   },
   "dependencies": {

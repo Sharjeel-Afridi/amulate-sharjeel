@@ -1,5 +1,4 @@
-import { carArt } from '@car/catalog'
-import { type Listing, isRental } from '@car/shared'
+import { CURRENCY_SYMBOL, type Listing, isRental, money, moneyExact } from '@car/shared'
 import { BRIDGE_JS, esc, layout } from '../theme.js'
 
 export interface Extra {
@@ -52,13 +51,13 @@ export function bookingFormHtml(listing: Listing, defaults: BookingFormDefaults 
   const end = defaults.endDate ?? isoPlusDays(14)
 
   const priceLabel = rental
-    ? `€${listing.dailyRate}/day · €${listing.monthlyRate}/mo`
-    : `€${listing.price.toLocaleString('en-IE')}`
+    ? `${moneyExact(listing.dailyRate)}/day · ${money(listing.monthlyRate)}/mo`
+    : money(listing.price)
 
   const body = `
 <div class="card stack">
   <div class="row">
-    <div class="art">${carArt(listing.brand, listing.category)}</div>
+    <div class="art"><img src="${esc(listing.imageUrl)}" alt="" loading="lazy"></div>
     <div style="min-width:0">
       <h1>${esc(listing.brand)} ${esc(listing.model)}</h1>
       <div class="tiny muted">${esc(listing.year)} · ${esc(listing.fuel)} · ${esc(listing.transmission)} · ${esc(listing.location)}</div>
@@ -105,7 +104,7 @@ export function bookingFormHtml(listing: Listing, defaults: BookingFormDefaults 
           (e) => `<label class="extra">
         <input type="checkbox" data-extra="${e.id}" data-price="${e.price}" data-perday="${e.perDay}">
         <span>${esc(e.label)}</span>
-        <span class="price">€${e.price}${e.perDay ? '/day' : ''}</span>
+        <span class="price">${money(e.price)}${e.perDay ? '/day' : ''}</span>
       </label>`,
         )
         .join('')}
@@ -118,7 +117,7 @@ export function bookingFormHtml(listing: Listing, defaults: BookingFormDefaults 
 
   <div class="between" style="margin-top:6px">
     <span class="muted tiny">${rental ? 'Total for the period' : 'Total payable'}</span>
-    <span class="total" id="total">€0</span>
+    <span class="total" id="total">${money(0)}</span>
   </div>
 
   <div class="err" id="err"></div>
@@ -158,7 +157,7 @@ function compute() {
   return { n, baseTotal, extras, extrasTotal, total: baseTotal + extrasTotal };
 }
 
-function money(v) { return '€' + Math.round(v).toLocaleString('en-IE'); }
+function money(v) { return ${JSON.stringify(CURRENCY_SYMBOL)} + Math.round(v).toLocaleString('en-US'); }
 
 function render() {
   const { n, baseTotal, extras, extrasTotal, total } = compute();
@@ -167,7 +166,7 @@ function render() {
   for (const e of extras) {
     rows.push('<div class="line"><span>' + e.label + '</span><span>' + money(e.perDay ? e.price * n : e.price) + '</span></div>');
   }
-  if (extras.length === 0) rows.push('<div class="line"><span>No extras</span><span>€0</span></div>');
+  if (extras.length === 0) rows.push('<div class="line"><span>No extras</span><span>' + money(0) + '</span></div>');
   el('lines').innerHTML = rows.join('');
   el('total').textContent = money(total);
 

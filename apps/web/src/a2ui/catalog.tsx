@@ -1,5 +1,6 @@
 import { basicCatalog, createComponentImplementation, type ReactComponentImplementation } from '@a2ui/react/v0_9'
 import { Catalog, CommonSchemas } from '@a2ui/web_core/v0_9'
+import { CURRENCY_SYMBOL } from '@car/shared'
 import { z } from 'zod'
 
 /**
@@ -74,7 +75,19 @@ export const CarCard = createComponentImplementation(CarCardApi, ({ props, build
           : undefined
       }
     >
-      {props.imageUrl && <img className="a2ui-carcard__img" src={props.imageUrl} alt="" />}
+      {props.imageUrl && (
+        <img
+          className="a2ui-carcard__img"
+          src={props.imageUrl}
+          alt=""
+          // The photographs are hotlinked from the marketplace, so a flaky
+          // network takes them out. Removing the broken image leaves a card that
+          // still reads; leaving it shows a torn-page icon on every result.
+          onError={(e) => {
+            e.currentTarget.style.display = 'none'
+          }}
+        />
+      )}
       <div className="a2ui-carcard__body">
         <div className="a2ui-carcard__title">{props.title}</div>
         {props.subtitle && <div className="a2ui-carcard__subtitle">{props.subtitle}</div>}
@@ -134,7 +147,7 @@ export const PriceBadgeApi = {
 
 export const PriceBadge = createComponentImplementation(PriceBadgeApi, ({ props }) => {
   const amount = typeof props.amount === 'number' ? props.amount : 0
-  const currency = props.currency ?? '€'
+  const currency = props.currency ?? CURRENCY_SYMBOL
 
   return (
     <span className="a2ui-pricebadge">

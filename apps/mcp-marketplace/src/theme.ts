@@ -106,8 +106,11 @@ button.primary:disabled { opacity: .45; cursor: not-allowed; }
   font-size: 12px;
   font-weight: 500;
 }
-.art { width: 92px; height: 42px; flex: none; }
+/* The marketplace photos are 752x500 cut-outs on transparency, so they need a
+   box near that ratio and object-fit to stop them stretching. */
+.art { width: 104px; height: 68px; flex: none; }
 .art svg { width: 100%; height: 100%; }
+.art img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .done { text-align: center; padding: 26px 16px; }
 .check {
   width: 46px; height: 46px; margin: 0 auto 14px;

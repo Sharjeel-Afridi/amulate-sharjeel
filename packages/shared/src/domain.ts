@@ -56,6 +56,20 @@ interface ListingBase {
   doors: number
   /** Boot capacity in litres — the single most-asked-about practical number. */
   bootLitres: number
+  /**
+   * Suitcases the marketplace says it takes. Kept alongside litres because it is
+   * the figure the source actually publishes, and it is how people describe
+   * their own luggage — "three bags", not "380 litres".
+   */
+  bags: number
+  /**
+   * Photograph of the car, cut out on transparency.
+   *
+   * The scrape also carried a `background` url, but every offer pointed at the
+   * same one and it 404s, so it is left in `cars.json` as scraped and not
+   * surfaced here — a field that is always broken is worse than no field.
+   */
+  imageUrl: string
   /** L/100km for combustion, kWh/100km for electric. */
   consumption: number
   /** g/km. Zero for electric. */

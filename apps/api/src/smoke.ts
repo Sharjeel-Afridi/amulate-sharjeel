@@ -86,7 +86,8 @@ const turns = [
   'weekend trips with two kids',
   'five',
   'suv',
-  '400 a month',
+  // Sized to the real fleet: hire runs $1,170–$9,400 a month.
+  '3000 a month',
   '12 September',
   '19 September',
   'pram and big luggage',

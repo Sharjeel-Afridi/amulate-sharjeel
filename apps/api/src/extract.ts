@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category, type Mode, type Preferences } from '@car/shared'
+import { CATEGORIES, type Category, type Mode, type Preferences, money, moneyPerMonth } from '@car/shared'
 
 /**
  * Best-effort preference extraction from free text.
@@ -126,9 +126,12 @@ export function extractPreferences(
   const budget = detectBudget(t)
   if (budget !== undefined) {
     // A monthly figure and a purchase price live on wildly different scales, so
-    // use the resolved mode to decide whether a bare number is plausible.
+    // use the resolved mode to decide whether a bare number is plausible. The
+    // bounds bracket the real fleet — hire runs to $9,400 a month and the
+    // cheapest car sells for $18,900 — with room either side for a number the
+    // stock cannot meet, which the search reports as relaxed rather than hiding.
     const resolvedMode = patch.mode ?? existing.mode
-    const plausible = resolvedMode === 'buy' ? budget >= 2000 : budget <= 5000
+    const plausible = resolvedMode === 'buy' ? budget >= 10_000 : budget <= 12_000
     if (plausible) patch.budgetMax = budget
   }
 
@@ -162,8 +165,8 @@ export function describeSpec(prefs: Preferences): string {
   if (prefs.budgetMax) {
     parts.push(
       prefs.mode === 'buy'
-        ? `up to €${prefs.budgetMax.toLocaleString('en-IE')}`
-        : `up to €${prefs.budgetMax.toLocaleString('en-IE')}/month`,
+        ? `up to ${money(prefs.budgetMax)}`
+        : `up to ${moneyPerMonth(prefs.budgetMax)}`,
     )
   }
   if (prefs.targetDate) parts.push(`from ${prefs.targetDate}`)

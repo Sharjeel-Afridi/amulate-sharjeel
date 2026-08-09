@@ -1,3 +1,5 @@
+import { CURRENCY_SYMBOL } from '@car/shared'
+
 /**
  * Numeric and formatting helpers shared by both scoring models.
  *
@@ -111,8 +113,13 @@ export function thousands(n: number): string {
   return sign + out
 }
 
-export function euro(n: number): string {
-  return `€${thousands(n)}`
+/**
+ * A price, in the catalogue's currency. Named for the job rather than the
+ * currency, which is now a single constant instead of a symbol in thirteen files.
+ * Still hand-rolled below the symbol — see the note at the top of this file.
+ */
+export function priceText(n: number): string {
+  return `${CURRENCY_SYMBOL}${thousands(n)}`
 }
 
 export function kms(n: number): string {

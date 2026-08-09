@@ -7,7 +7,7 @@ import {
   isPurchase,
   isRental,
 } from '@car/shared'
-import { UNLIMITED_KM, euro, kms, litres, oneDp, plural, thousands } from './util.js'
+import { UNLIMITED_KM, priceText, kms, litres, oneDp, plural, thousands } from './util.js'
 
 /**
  * At most two clauses. One is often too thin to be convincing and three reads
@@ -74,7 +74,7 @@ function statedCriteria(prefs: Preferences, listing: Listing): StatedCriterion[]
   }
   if (prefs.budgetMax !== undefined) {
     const b = prefs.budgetMax
-    out.push({ label: `under ${euro(b)}${perMonth}`, test: (l) => budgetValue(l) <= b })
+    out.push({ label: `under ${priceText(b)}${perMonth}`, test: (l) => budgetValue(l) <= b })
   }
   if (prefs.bootLitresMin !== undefined) {
     const m = prefs.bootLitresMin
@@ -153,7 +153,7 @@ export function buildRationale(
   // month" twice in one breath.
   const budgetHolds =
     budget !== undefined && value <= budget && others.every((o) => budgetValue(o) <= budget)
-  const scope = budgetHolds ? `of anything under your ${euro(budget)}${perMonth}` : 'in this shortlist'
+  const scope = budgetHolds ? `of anything under your ${priceText(budget)}${perMonth}` : 'in this shortlist'
 
   // --- Strongest claim available: it alone clears the whole brief -----------
   const criteria = statedCriteria(prefs, listing)
@@ -168,13 +168,13 @@ export function buildRationale(
   if (budget !== undefined) {
     const gap = budget - value
     if (gap >= 0 && strictMin(budgetValue)) {
-      add('price', 90, `Cheapest in this shortlist at ${euro(value)}${perMonth}, leaving ${euro(gap)} of your ${euro(budget)}`)
+      add('price', 90, `Cheapest in this shortlist at ${priceText(value)}${perMonth}, leaving ${priceText(gap)} of your ${priceText(budget)}`)
     } else if (gap >= 0 && jointMin(budgetValue)) {
-      add('price', 85, `Joint cheapest here at ${euro(value)}${perMonth}, leaving ${euro(gap)} of your ${euro(budget)}`)
+      add('price', 85, `Joint cheapest here at ${priceText(value)}${perMonth}, leaving ${priceText(gap)} of your ${priceText(budget)}`)
     } else if (gap >= 0) {
-      add('price', 50, `${euro(value)}${perMonth}, ${euro(gap)} inside the ${euro(budget)} you set`)
+      add('price', 50, `${priceText(value)}${perMonth}, ${priceText(gap)} inside the ${priceText(budget)} you set`)
     } else {
-      add('price', 45, `${euro(value)}${perMonth}, ${euro(-gap)} above the ${euro(budget)} you set`)
+      add('price', 45, `${priceText(value)}${perMonth}, ${priceText(-gap)} above the ${priceText(budget)} you set`)
     }
   }
 
@@ -241,7 +241,7 @@ export function buildRationale(
       add('availability', 31, `Instant booking, from ${plural(listing.minRentalDays, 'day')}`)
     }
     if (strictMin((l) => (isRental(l) ? l.excess : 0))) {
-      add('excess', 32, `Lowest insurance excess here at ${euro(listing.excess)}`)
+      add('excess', 32, `Lowest insurance excess here at ${priceText(listing.excess)}`)
     }
   }
 
@@ -319,7 +319,7 @@ export function buildRationale(
 
 function summarise(listing: Listing): string {
   if (isRental(listing)) {
-    return `${euro(listing.monthlyRate)} a month, ${litres(listing.bootLitres)} of boot, rated ${oneDp(listing.rating)}`
+    return `${priceText(listing.monthlyRate)} a month, ${litres(listing.bootLitres)} of boot, rated ${oneDp(listing.rating)}`
   }
-  return `${euro(listing.price)}, ${kms(listing.mileageKm)} on the clock, rated ${oneDp(listing.rating)}`
+  return `${priceText(listing.price)}, ${kms(listing.mileageKm)} on the clock, rated ${oneDp(listing.rating)}`
 }

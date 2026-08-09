@@ -1,6 +1,5 @@
-import { carArt } from '@car/catalog'
 import type { Booking, Listing } from '@car/shared'
-import { isRental } from '@car/shared'
+import { isRental, money } from '@car/shared'
 import { BRIDGE_JS, esc, layout } from '../theme.js'
 import { extrasFor } from './booking-form.js'
 
@@ -27,7 +26,6 @@ export function checkoutHtml(booking: Booking, listing: Listing): string {
       : 1
 
   const baseTotal = rental ? listing.dailyRate * days : listing.price
-  const money = (v: number) => `€${Math.round(v).toLocaleString('en-IE')}`
 
   const lines = [
     `<div class="line"><span>${
@@ -49,7 +47,7 @@ export function checkoutHtml(booking: Booking, listing: Listing): string {
   </div>
 
   <div class="row">
-    <div class="art">${carArt(listing.brand, listing.category)}</div>
+    <div class="art"><img src="${esc(listing.imageUrl)}" alt="" loading="lazy"></div>
     <div style="min-width:0">
       <h1>${esc(listing.brand)} ${esc(listing.model)}</h1>
       <div class="tiny muted">Booking ${esc(booking.id)}${

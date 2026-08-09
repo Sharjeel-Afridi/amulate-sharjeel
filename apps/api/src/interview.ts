@@ -1,13 +1,15 @@
 import {
-  CATEGORIES,
   CATEGORY_LABELS,
+  CURRENCY_SYMBOL,
   type Category,
   type Criterion,
   type FuelType,
   type Mode,
   type Preferences,
   type Transmission,
+  money,
 } from '@car/shared'
+import { availableCategories } from '@car/catalog'
 
 /**
  * The interview plan.
@@ -41,9 +43,15 @@ export interface Question {
   optional?: boolean
 }
 
+/**
+ * Only the body styles the fleet actually holds.
+ *
+ * Offering all ten would let someone pick "pickup" and be told, after eleven
+ * questions, that nothing matches — a dead end the data could have prevented.
+ */
 const categoryOptions = [
-  ...CATEGORIES.map((c) => ({ label: CATEGORY_LABELS[c], value: c })),
-  { label: "Not sure — help me choose", value: 'unsure' },
+  ...availableCategories().map((c) => ({ label: CATEGORY_LABELS[c], value: c })),
+  { label: 'Not sure — help me choose', value: 'unsure' },
 ]
 
 export const QUESTIONS: Question[] = [
@@ -68,11 +76,12 @@ export const QUESTIONS: Question[] = [
     topic: 'seatsMin',
     ask: 'How many people need to fit, most of the time?',
     control: 'chips',
+    // The fleet seats 4, 5, 7 or 9 — nothing smaller exists to offer.
     options: [
-      { label: 'Just me, or two of us', value: '2' },
-      { label: 'Three or four', value: '4' },
+      { label: 'Up to four', value: '4' },
       { label: 'Five', value: '5' },
-      { label: 'Six or more', value: '7' },
+      { label: 'Six or seven', value: '7' },
+      { label: 'Eight or nine', value: '9' },
     ],
   },
   {
@@ -82,15 +91,18 @@ export const QUESTIONS: Question[] = [
     control: 'chips',
     options: categoryOptions,
   },
+  // Both sliders are scaled to what is actually on the forecourt — hire runs
+  // $1,170–$9,400 a month and the same cars sell for $18,900–$165,400. A range
+  // the stock cannot fill just teaches people their budget is impossible.
   {
     id: 'budget',
     topic: 'budgetMax',
     ask: "What's the most you'd want to spend?",
     control: 'slider',
-    min: 150,
-    max: 1500,
-    step: 25,
-    unit: '€/month',
+    min: 1000,
+    max: 10000,
+    step: 250,
+    unit: `${CURRENCY_SYMBOL}/month`,
     appliesTo: 'rent',
   },
   {
@@ -98,10 +110,10 @@ export const QUESTIONS: Question[] = [
     topic: 'budgetMax',
     ask: "What's the most you'd want to spend?",
     control: 'slider',
-    min: 5000,
-    max: 120000,
-    step: 1000,
-    unit: '€',
+    min: 15000,
+    max: 170000,
+    step: 5000,
+    unit: CURRENCY_SYMBOL,
     appliesTo: 'buy',
   },
   {
@@ -122,10 +134,11 @@ export const QUESTIONS: Question[] = [
     topic: 'bootLitresMin',
     ask: 'How much are you usually carrying?',
     control: 'chips',
+    // Thresholds sit on the real boot distribution, which clusters hard at 460 L.
     options: [
       { label: 'Not much', value: '0' },
-      { label: 'Weekly shop, a couple of bags', value: '350' },
-      { label: 'Pram, sports kit, big luggage', value: '450' },
+      { label: 'Weekly shop, a couple of bags', value: '300' },
+      { label: 'Pram, sports kit, big luggage', value: '460' },
       { label: 'As much as possible', value: '600' },
     ],
   },
@@ -365,7 +378,7 @@ export function requirementCriteria(prefs: Preferences, strictBudget: boolean): 
       // Only a veto if the user said so; otherwise over-budget cars can still
       // appear, ranked down, because "a bit over" is often worth seeing.
       kind: strictBudget ? 'exclusion' : 'requirement',
-      label: `Within €${prefs.budgetMax.toLocaleString('en-IE')}`,
+      label: `Within ${money(prefs.budgetMax)}`,
       field: 'price',
       op: 'lte',
       value: prefs.budgetMax,

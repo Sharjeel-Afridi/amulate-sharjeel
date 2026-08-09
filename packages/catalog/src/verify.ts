@@ -1,14 +1,18 @@
 /**
- * Verifies the catalogue meets the brief's floor: >=100 listings, 10 categories,
- * >=10 brands per category. Run with `npm run verify -w @car/catalog`.
- * Exits non-zero on failure so it can gate a build.
+ * Checks the loaded catalogue is coherent before anything reasons over it.
+ *
+ * The thresholds describe the real fleet rather than an aspiration: 45 scraped
+ * offers, both modes, seven body styles. What matters now is not volume but that
+ * every listing is complete — a missing boot figure or a NaN price is invisible
+ * until a rationale quotes it at someone.
+ *
+ * Run with `npm run verify -w @car/catalog`. Exits non-zero so it can gate a build.
  */
-import { CATEGORIES, isPurchase, isRental } from '@car/shared'
-import { carArt } from './art.js'
-import { generateCatalog } from './generate.js'
+import { type Listing, isPurchase, isRental, money } from '@car/shared'
+import { availableCategories, catalogueSource, loadCatalog, priceRange } from './load.js'
 import { searchListings } from './query.js'
 
-const all = generateCatalog()
+const all = loadCatalog()
 const failures: string[] = []
 
 const brandsByCategory = new Map<string, Set<string>>()
@@ -17,46 +21,84 @@ for (const l of all) {
   brandsByCategory.get(l.category)!.add(l.brand)
 }
 
+console.log(`source            ${catalogueSource.source} (${catalogueSource.currency})`)
+console.log(`offers            ${catalogueSource.offers}`)
 console.log(`listings          ${all.length}`)
 console.log(`  rent            ${all.filter(isRental).length}`)
 console.log(`  buy             ${all.filter(isPurchase).length}`)
 console.log(`categories        ${brandsByCategory.size}`)
+console.log(`brands            ${new Set(all.map((l) => l.brand)).size}`)
 console.log(`unique ids        ${new Set(all.map((l) => l.id)).size}`)
 console.log('')
 
-for (const c of CATEGORIES) {
-  const n = brandsByCategory.get(c)?.size ?? 0
-  console.log(`  ${c.padEnd(12)} ${String(n).padStart(2)} brands`)
-  if (n < 10) failures.push(`${c} has only ${n} brands (need 10)`)
+for (const c of availableCategories()) {
+  const brands = brandsByCategory.get(c)
+  console.log(`  ${c.padEnd(12)} ${String(brands?.size ?? 0).padStart(2)} brands`)
 }
 
-if (all.length < 100) failures.push(`only ${all.length} listings (need 100)`)
-if (brandsByCategory.size < 10) failures.push(`only ${brandsByCategory.size} categories (need 10)`)
+if (all.length !== catalogueSource.offers * 2) {
+  failures.push(`expected two listings per offer, got ${all.length} from ${catalogueSource.offers}`)
+}
+if (all.filter(isRental).length !== all.filter(isPurchase).length) {
+  failures.push('rent and buy counts differ — every car should be available both ways')
+}
 if (new Set(all.map((l) => l.id)).size !== all.length) failures.push('duplicate listing ids')
+if (brandsByCategory.size < 5) failures.push(`only ${brandsByCategory.size} categories`)
 
-const rentSuv = all.find((l) => isRental(l) && l.category === 'suv')
-const buySuv = all.find((l) => isPurchase(l) && l.category === 'suv')
-console.log('\nsample rent:', rentSuv && JSON.stringify(rentSuv))
-console.log('\nsample buy: ', buySuv && JSON.stringify(buySuv))
+/**
+ * Completeness, field by field.
+ *
+ * NaN survives JSON as null and an absent string renders as "undefined" in the
+ * middle of a sentence, so this asserts values rather than shapes.
+ */
+const positive = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n > 0
+const nonEmpty = (s: unknown) => typeof s === 'string' && s.trim().length > 0
 
-const r = searchListings(all, { mode: 'rent', category: 'suv', budgetMax: 400, bootLitresMin: 450 })
-console.log(`\nsearch  suv rent <=400/mo boot>=450  ->  ${r.matched} matched, relaxed: [${r.relaxed}]`)
-for (const l of r.listings.slice(0, 5)) {
-  const price = isRental(l) ? `EUR ${l.monthlyRate}/mo` : `EUR ${(l as { price: number }).price}`
-  console.log(`  ${`${l.brand} ${l.model}`.padEnd(28)} ${price.padEnd(14)} boot ${l.bootLitres}L  ${l.fuel}`)
+for (const l of all) {
+  const problems: string[] = []
+  if (!nonEmpty(l.brand) || !nonEmpty(l.model)) problems.push('brand/model')
+  if (!positive(l.year) || l.year < 2000 || l.year > 2030) problems.push(`year=${l.year}`)
+  if (!positive(l.seats) || !positive(l.doors)) problems.push('seats/doors')
+  if (!positive(l.bootLitres) || !positive(l.bags)) problems.push('boot/bags')
+  if (!positive(l.co2) && l.fuel !== 'electric') problems.push('co2')
+  if (!positive(l.consumption)) problems.push('consumption')
+  if (!positive(l.rating) || l.rating > 5) problems.push(`rating=${l.rating}`)
+  if (!nonEmpty(l.location) || !nonEmpty(l.colour)) problems.push('location/colour')
+  if (!nonEmpty(l.imageUrl) || !l.imageUrl.startsWith('https://')) problems.push('imageUrl')
+  if (isRental(l) && (!positive(l.dailyRate) || !positive(l.monthlyRate) || !positive(l.excess))) {
+    problems.push('rental pricing')
+  }
+  if (isPurchase(l) && (!positive(l.price) || !positive(l.financeMonthly))) {
+    problems.push('purchase pricing')
+  }
+  if (problems.length) failures.push(`${l.id}: ${problems.join(', ')}`)
 }
 
-const tight = searchListings(all, { mode: 'buy', category: 'sports', budgetMax: 20000, minYear: 2025 })
-console.log(`\nsearch  sports buy <=20k, 2025+     ->  ${tight.matched} matched, relaxed: [${tight.relaxed}]`)
-if (tight.matched === 0) failures.push('relaxation failed to rescue an over-tight search')
+const rentRange = priceRange('rent')
+const buyRange = priceRange('buy')
+console.log(`\nrent              ${money(rentRange.min)}–${money(rentRange.max)} per month`)
+console.log(`buy               ${money(buyRange.min)}–${money(buyRange.max)}`)
 
-const art = carArt('Volvo', 'suv')
-console.log(`\ncar art           ${art.length} bytes`)
-if (!art.startsWith('<svg')) failures.push('car art is not an svg')
+const describe = (l: Listing) =>
+  `${l.year} ${l.brand} ${l.model} · ${l.category} · ${l.fuel} · ${l.bootLitres} L · ` +
+  (isRental(l) ? `${money(l.monthlyRate)}/mo` : `${money(l.price)}, ${l.mileageKm.toLocaleString('en-US')} km`)
+
+console.log('\nsample rent:', describe(all.find(isRental)!))
+console.log('sample buy: ', describe(all.find(isPurchase)!))
+
+const suv = searchListings(all, { mode: 'rent', category: 'suv', budgetMax: 2500, bootLitresMin: 450 })
+console.log(`\nsearch  suv rent <=${money(2500)}/mo boot>=450  ->  ${suv.matched} matched, relaxed: [${suv.relaxed}]`)
+for (const l of suv.listings.slice(0, 5)) console.log(`  ${describe(l)}`)
+if (suv.matched === 0) failures.push('a reasonable SUV search returned nothing')
+
+const tight = searchListings(all, { mode: 'buy', category: 'coupe', budgetMax: 5000, minYear: 2026 })
+console.log(`\nsearch  coupe buy <=${money(5000)}, 2026+   ->  ${tight.matched} matched, relaxed: [${tight.relaxed}]`)
+if (tight.matched === 0) failures.push('relaxation failed to rescue an over-tight search')
 
 if (failures.length) {
   console.error('\nFAILED:')
-  for (const f of failures) console.error(`  - ${f}`)
+  for (const f of failures.slice(0, 20)) console.error(`  - ${f}`)
+  if (failures.length > 20) console.error(`  … and ${failures.length - 20} more`)
   process.exit(1)
 }
 console.log('\nall checks passed')

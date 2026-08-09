@@ -1,5 +1,4 @@
-import { carArtDataUri } from '@car/catalog'
-import { type RankedListing, type SessionState, isRental } from '@car/shared'
+import { CURRENCY_SYMBOL, type RankedListing, type SessionState, isRental, money } from '@car/shared'
 import {
   type A2uiComponent,
   type A2uiMessage,
@@ -23,8 +22,6 @@ import type { Question } from './interview.js'
  * the comparison view, where the layout genuinely depends on what is being
  * compared. Everything structural is built here.
  */
-
-const money = (n: number) => `€${Math.round(n).toLocaleString('en-IE')}`
 
 /**
  * Create the surfaces once, at session start.
@@ -102,8 +99,14 @@ export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[]
       id: listing.id,
       title: `${rank}. ${listing.brand} ${listing.model}`,
       subtitle: [listing.category, listing.year, listing.fuel, listing.transmission].join(' · '),
-      imageUrl: carArtDataUri(listing.brand, listing.category),
-      tags: [`${listing.bootLitres} L boot`, `${listing.seats} seats`, `${listing.consumption} ${rental ? 'L/100km' : 'L/100km'}`],
+      // The real photograph from the marketplace listing, not a generated one.
+      imageUrl: listing.imageUrl,
+      tags: [
+        `${listing.bootLitres} L boot`,
+        `${listing.seats} seats`,
+        `${listing.bags} bags`,
+        `${listing.consumption} ${listing.fuel === 'electric' ? 'kWh' : 'L'}/100km`,
+      ],
       score,
       price: rental ? listing.monthlyRate : listing.price,
       period: rental ? 'month' : '',
@@ -146,7 +149,7 @@ export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[]
         id: 'carPrice',
         component: 'PriceBadge',
         amount: { path: 'price' },
-        currency: '€',
+        currency: CURRENCY_SYMBOL,
         period: { path: 'period' },
       },
       // The rationale is structural, not decorative — it is what makes this a

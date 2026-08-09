@@ -4,6 +4,7 @@ import {
   type Preferences,
   type RankedListing,
   missingFields,
+  money,
   screen,
 } from '@car/shared'
 import {
@@ -268,7 +269,7 @@ export async function startBooking(ctx: TurnContext, listingId: string): Promise
 /** The booking form submitted itself; hand the user straight to checkout. */
 export async function handleBookingSubmitted(ctx: TurnContext, result: unknown): Promise<void> {
   const booking = result as { bookingId: string; total: number; listing: string }
-  ctx.step('Booking held', `${booking.bookingId} · €${booking.total}`)
+  ctx.step('Booking held', `${booking.bookingId} · ${money(booking.total)}`)
   ctx.say(`Held ${booking.listing} for you. Here's the checkout — a mock, so no card is charged.`)
 
   const { html } = await callToolForApp('start_checkout', { bookingId: booking.bookingId })

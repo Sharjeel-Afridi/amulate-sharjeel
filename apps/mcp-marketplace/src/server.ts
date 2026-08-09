@@ -24,7 +24,15 @@ function placeholder(title: string): string {
   return `<!doctype html><html><body style="font:14px sans-serif;color:#98a1ab;background:transparent;padding:16px">${title} — no instance rendered yet. Call the tool that opens it.</body></html>`
 }
 
-/** Trims a listing to the fields the agent needs to reason and write rationales. */
+/**
+ * Trims a listing to the fields the agent needs to reason and write rationales.
+ *
+ * "Needs" includes what the result will be *rendered* with, not only what gets
+ * reasoned over — the search result is what the ranked cards are built from, so
+ * a field dropped here comes out the other end as `undefined bags` and a card
+ * with no photograph. The rule that caught the NaN scores below is the same one:
+ * omitting a cheap field is expensive.
+ */
 function summarize(l: Listing) {
   const common = {
     id: l.id,
@@ -35,11 +43,16 @@ function summarize(l: Listing) {
     fuel: l.fuel,
     transmission: l.transmission,
     seats: l.seats,
+    doors: l.doors,
     bootLitres: l.bootLitres,
+    bags: l.bags,
     consumption: l.consumption,
     co2: l.co2,
+    colour: l.colour,
     location: l.location,
     rating: l.rating,
+    reviewCount: l.reviewCount,
+    imageUrl: l.imageUrl,
   }
   return isRental(l)
     ? {

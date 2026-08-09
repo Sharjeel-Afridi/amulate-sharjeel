@@ -1,4 +1,5 @@
 import type { A2uiClientAction, A2uiMessage } from '@a2ui/web_core/v0_9'
+import { CURRENCY_SYMBOL } from '@car/shared'
 import { useEffect, useRef, useState } from 'react'
 import { A2uiHost, type A2uiDataChange, type A2uiHostHandle } from './A2uiHost.js'
 import { CAR_CATALOG_ID } from './catalog.js'
@@ -118,7 +119,7 @@ const DEMO_MESSAGES: A2uiMessage[] = [
         },
         { id: 'carMeta', component: 'Row', children: ['carScore', 'carPrice'], justify: 'spaceBetween', align: 'center' },
         { id: 'carScore', component: 'MatchScore', score: { path: 'score' }, label: 'match' },
-        { id: 'carPrice', component: 'PriceBadge', amount: { path: 'price' }, currency: '€', period: 'day' },
+        { id: 'carPrice', component: 'PriceBadge', amount: { path: 'price' }, currency: CURRENCY_SYMBOL, period: 'day' },
 
         // Interactive controls from the standard basic catalog.
         { id: 'filtersCard', component: 'Card', child: 'filtersCol' },
@@ -138,9 +139,9 @@ const DEMO_MESSAGES: A2uiMessage[] = [
         {
           id: 'budget',
           component: 'Slider',
-          label: 'Max € per day',
-          min: 30,
-          max: 200,
+          label: `Max ${CURRENCY_SYMBOL} per day`,
+          min: 50,
+          max: 450,
           value: { path: '/filters/budgetPerDay' },
         },
         {

@@ -1,4 +1,5 @@
 import type { Listing } from './domain.js'
+import { money } from './money.js'
 
 /**
  * The interview turns what someone says into checkable criteria.
@@ -96,7 +97,7 @@ function describeEvidence(listing: Listing, field: string, actual: unknown): str
   const unit = UNITS[field] ?? ''
   if (field === 'price' || field === 'monthlyCost') {
     const suffix = listing.mode === 'rent' ? '/month' : ''
-    return `€${Number(actual).toLocaleString('en-IE')}${suffix}`
+    return `${money(Number(actual))}${suffix}`
   }
   return `${String(actual)}${unit}`
 }
