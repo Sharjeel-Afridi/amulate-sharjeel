@@ -39,14 +39,15 @@
   --danger: #ff6b6b;
   --warn: #ffd75e;
 
-  /* Type scale */
+  /* Type scale. Two jumps matter: body → lead for anything the user actually
+     reads, and title → display for the one thing a screen is about. */
   --fs-micro: 10.5px;
   --fs-tiny: 11.5px;
   --fs-small: 12.5px;
   --fs-body: 14px;
-  --fs-lead: 15px;
-  --fs-title: 17px;
-  --fs-display: 22px;
+  --fs-lead: 15.5px;
+  --fs-title: 18px;
+  --fs-display: 26px;
 
   /* Space scale — everything is a multiple of 4. */
   --s1: 4px;
@@ -191,12 +192,14 @@ body::before {
 
 .brand { display: flex; align-items: center; gap: var(--s2); }
 .brand__mark {
-  width: 24px; height: 24px; border-radius: 7px;
+  width: 26px; height: 26px; border-radius: 8px;
   background: var(--accent); color: var(--accent-ink);
   display: grid; place-items: center;
   font-weight: 800; font-size: var(--fs-small); flex: none;
+  transition: transform var(--dur) var(--ease);
 }
-.brand__name { font-size: var(--fs-body); font-weight: 600; letter-spacing: -0.015em; }
+.brand:hover .brand__mark { transform: rotate(-6deg) scale(1.06); }
+.brand__name { font-size: var(--fs-lead); font-weight: 700; letter-spacing: -0.02em; }
 
 /* ------------------------------------------------------------- stepper */
 
@@ -223,9 +226,17 @@ body::before {
 .stepper__step--done .stepper__dot { background: var(--success); border-color: var(--success); }
 .stepper__step--active .stepper__dot { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 
-.stepper__label { font-size: var(--fs-small); color: var(--faint); white-space: nowrap; }
+.stepper__label { font-size: var(--fs-small); font-weight: 500; color: var(--faint); white-space: nowrap; }
 .stepper__step--done .stepper__label { color: var(--muted); }
-.stepper__step--active .stepper__label { color: var(--accent); font-weight: 600; }
+.stepper__step--active .stepper__label { color: var(--accent); font-weight: 700; }
+
+/* The tick pops in when a step completes — a step finishing is worth a beat. */
+@keyframes dot-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.stepper__step--done .stepper__dot { animation: dot-pop 0.35s var(--ease); }
 
 .stepper__rule { width: 18px; height: 1px; background: var(--line-strong); flex: none; }
 
@@ -277,7 +288,7 @@ body::before {
   align-items: center;
   gap: var(--s2);
   padding: var(--s2) var(--s4);
-  margin: var(--s3) var(--s3) 0;
+  margin: var(--s3) var(--s4) 0;
   border: 1px solid rgba(200, 255, 61, 0.28);
   border-radius: var(--radius);
   background: rgba(200, 255, 61, 0.06);
@@ -316,24 +327,18 @@ body::before {
   50% { box-shadow: 0 0 0 3px var(--accent), 0 0 14px var(--accent-glow); }
 }
 
-[data-guide="on"] .interview .a2ui-host button,
-[data-guide="on"] .panel--stage .a2ui-host button,
-[data-guide="on"] .panel--stage .a2ui-carcard[role="button"] {
+/* Only the step's primary action wears the ring. Ringing every chip made the
+   whole surface pulse, which guides towards nothing — one ring per screen says
+   "this is the way forward" and lets the options stay options. `first-of-type`
+   keeps it off the "← Back" link that can follow the primary. */
+[data-guide="on"] .interview .a2ui-host button:not(.chip):not([aria-pressed]):first-of-type {
   animation: guide-ring 2.4s var(--ease) infinite;
-}
-
-/* The chips are one decision between them, so they share a single ring rather
-   than each pulsing on its own — six competing rings is noise, not guidance. */
-[data-guide="on"] .interview .a2ui-host button[aria-pressed] {
-  animation-duration: 3.2s;
 }
 
 /* Motion is the affordance here, so when it is suppressed the ring has to stay
    on rather than disappear with the animation. */
 @media (prefers-reduced-motion: reduce) {
-  [data-guide="on"] .interview .a2ui-host button,
-  [data-guide="on"] .panel--stage .a2ui-host button,
-  [data-guide="on"] .panel--stage .a2ui-carcard[role="button"] {
+  [data-guide="on"] .interview .a2ui-host button:not(.chip):not([aria-pressed]):first-of-type {
     box-shadow: 0 0 0 2px var(--accent-dim);
   }
 }
@@ -351,30 +356,43 @@ body::before {
 @media (max-width: 1320px) { .specchips .chip:nth-child(n + 3) { display: none; } }
 @media (max-width: 1180px) { .specchips { display: none; } }
 
+/*
+ * A chip is exactly as wide as what it says. `flex: none` is the load-bearing
+ * line: without it the row squeezed every chip and clipped "Renting" to
+ * "Rentiı" mid-glyph. Overflow is handled by shedding whole chips (the media
+ * queries above), never by truncating one — a clipped fact is worse than an
+ * absent one. Only the free-text value can genuinely run long, so the
+ * ellipsis lives on the inner <b>, where it actually works.
+ */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 10px;
+  flex: none;
+  height: 28px;
+  padding: 0 var(--s3);
   border-radius: 99px;
   background: var(--surface-3);
   border: 1px solid var(--line);
   font-size: var(--fs-tiny);
   color: var(--muted);
   white-space: nowrap;
-  max-width: 190px;
+}
+.chip b {
+  color: var(--text);
+  font-weight: 650;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chip b { color: var(--text); font-weight: 600; }
 
-/* Flash when the agent fills a field, so the bar reads as live. */
+/* Flash and pop when the agent fills a field, so the bar reads as live. */
 @keyframes chip-in {
-  from { background: var(--accent-glow); border-color: var(--accent-dim); }
-  to { background: var(--surface-3); border-color: var(--line); }
+  0% { background: var(--accent-glow); border-color: var(--accent-dim); transform: scale(0.92); }
+  40% { transform: scale(1.04); }
+  100% { background: var(--surface-3); border-color: var(--line); transform: scale(1); }
 }
-.chip--new { animation: chip-in 1.2s var(--ease); }
+.chip--new { animation: chip-in 0.9s var(--ease); }
 
 .chip--ghost { color: var(--faint); background: transparent; border-style: dashed; }
 
@@ -382,7 +400,15 @@ body::before {
 
 .chat { display: flex; flex-direction: column; gap: var(--s3); }
 
-.msg { max-width: 88%; font-size: var(--fs-body); line-height: 1.6; }
+/* Everything that lands in the thread rises in rather than appearing — the
+   conversation should feel dealt, not repainted. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+.msg, .step, .receipt, .mcpapp, .typing { animation: rise-in 0.3s var(--ease) both; }
+
+.msg { max-width: 88%; font-size: var(--fs-lead); line-height: 1.6; }
 .msg--agent { color: var(--text); }
 .msg--user {
   align-self: flex-end;
@@ -423,17 +449,77 @@ body::before {
 /* Typing indicator, in the thread where a reply is about to land — not in the
    header, where it reads as a permanent state of the application. */
 .typing { display: flex; align-items: center; gap: 5px; padding: var(--s1) 0; }
-.typing span {
+.typing span:not(.typing__label) {
   width: 5px; height: 5px; border-radius: 50%;
-  background: var(--faint);
+  background: var(--accent-dim);
   animation: typing 1.2s var(--ease) infinite;
 }
 .typing span:nth-child(2) { animation-delay: 0.15s; }
 .typing span:nth-child(3) { animation-delay: 0.3s; }
+.typing__label { margin-left: var(--s1); font-size: var(--fs-tiny); color: var(--faint); }
 @keyframes typing {
   0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-3px); }
 }
+
+/*
+ * The working line — a thin charge of accent that sweeps under the top bar
+ * whenever a driver is mid-turn. The chat has its typing dots and the dock has
+ * its pulse, but both scroll and both are local; this is the one signal that is
+ * always in the same place, and it is quiet enough to live there permanently.
+ */
+.workline {
+  position: relative;
+  flex: none;
+  height: 2px;
+  margin-top: -2px; /* sits on the topbar's own border */
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 3;
+}
+.workline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 45%, var(--accent) 55%, transparent 100%);
+  transform: translateX(-100%);
+}
+.workline--on { opacity: 1; }
+.workline--on::before { animation: workline 1.4s cubic-bezier(0.4, 0, 0.4, 1) infinite; }
+@keyframes workline {
+  to { transform: translateX(100%); }
+}
+
+/* What the agent is doing right now, next to the mode switch: the label of its
+   latest step while it works. Gone the moment it goes idle. */
+.agentpulse {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--s3);
+  border-radius: 99px;
+  border: 1px solid rgba(200, 255, 61, 0.22);
+  background: rgba(200, 255, 61, 0.05);
+  font-size: var(--fs-tiny);
+  color: var(--muted);
+  animation: rise-in 0.25s var(--ease) both;
+}
+.agentpulse__bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; flex: none; }
+.agentpulse__bars i {
+  width: 2.5px; border-radius: 2px;
+  background: var(--accent);
+  animation: eq 0.9s ease-in-out infinite;
+}
+.agentpulse__bars i:nth-child(1) { height: 60%; }
+.agentpulse__bars i:nth-child(2) { height: 100%; animation-delay: 0.15s; }
+.agentpulse__bars i:nth-child(3) { height: 75%; animation-delay: 0.3s; }
+@keyframes eq { 50% { transform: scaleY(0.35); } }
+.agentpulse__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+@media (max-width: 1320px) { .agentpulse__label { display: none; } }
 
 .status { display: flex; align-items: center; gap: 6px; font-size: var(--fs-tiny); color: var(--faint); }
 .status__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex: none; }
@@ -476,11 +562,16 @@ body::before {
   height: 40px; padding: 0 var(--s4);
   background: var(--accent); color: var(--accent-ink);
   border: 0; border-radius: var(--radius);
-  font: 600 var(--fs-small)/1 inherit; cursor: pointer;
-  transition: filter var(--dur) var(--ease), transform 0.08s var(--ease);
+  font: 650 var(--fs-small)/1 inherit; cursor: pointer;
+  transition: filter var(--dur) var(--ease), transform 0.12s var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
-.composer button:hover { filter: brightness(1.08); }
-.composer button:active { transform: scale(0.97); }
+.composer button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+.composer button:active { transform: scale(0.96); box-shadow: none; }
 .composer button:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------- stage */
@@ -579,6 +670,7 @@ body::before {
   background: rgba(110, 231, 168, 0.16);
   color: var(--success);
   font-size: var(--fs-micro); font-weight: 700;
+  animation: dot-pop 0.4s var(--ease) 0.15s both;
 }
 .receipt__label { color: var(--text); font-weight: 500; }
 
@@ -615,8 +707,35 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-2);
-  padding: var(--s3) var(--s4);
+  padding: var(--s4);
+  animation: rise-in 0.3s var(--ease) both;
 }
+
+/*
+ * The way back out of the booking form. Booking opens as a full-screen form
+ * over the catalogue, and until payment settles the decision is still open —
+ * so the door back to the results has to be visible, not implied.
+ */
+.backlink {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin: var(--s4) 0 0;
+  padding: var(--s1) var(--s3);
+  border: 1px solid transparent;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--fs-small)/1.4 inherit;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease),
+    transform 0.12s var(--ease);
+}
+.backlink:hover { color: var(--text); background: var(--surface-2); transform: translateX(-2px); }
+
+/* Anything keyboard-focused gets the same ring, everywhere. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ==========================================================================
    The interview, as the page rather than a column of it.
@@ -632,21 +751,23 @@ body::before {
  */
 .msg--ask {
   max-width: none;
-  font-size: clamp(23px, 2.5vw, 33px);
-  line-height: 1.22;
-  font-weight: 600;
-  letter-spacing: -0.022em;
+  font-size: clamp(25px, 2.8vw, 38px);
+  line-height: 1.18;
+  font-weight: 650;
+  letter-spacing: -0.025em;
   color: var(--text);
   margin: var(--s4) 0 var(--s2);
   text-wrap: balance;
 }
 
-.cockpit--form .msg--agent:not(.msg--ask) { color: var(--muted); }
+.cockpit--form .msg--agent:not(.msg--ask) { color: var(--muted); font-size: var(--fs-body); }
 
 /* Room to read the question before the controls start. */
 .cockpit--form .interview { margin-top: var(--s5); }
 
-.cockpit--form .composer { background: transparent; padding: var(--s4) 0 var(--s5); }
+/* Aligned to the chat column's own padding, so the input's edges sit flush
+   with the text above it rather than a step wider. */
+.cockpit--form .composer { background: transparent; padding: var(--s4) var(--s5) var(--s5); }
 
 /* ==========================================================================
    The catalogue, given the window.
@@ -675,6 +796,11 @@ body::before {
   border-top: 1px solid var(--line);
   background: rgba(8, 9, 11, 0.78);
   backdrop-filter: blur(12px);
+  animation: dock-in 0.4s var(--ease) both;
+}
+@keyframes dock-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
 
 .dock__inner {
@@ -688,7 +814,7 @@ body::before {
   align-items: flex-start;
   gap: var(--s2);
   margin: 0 0 var(--s2);
-  font-size: var(--fs-small);
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--muted);
   /* The agent's summary can run long; two lines is enough to know what it said
@@ -718,9 +844,10 @@ body::before {
   cursor: pointer;
   white-space: nowrap;
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+    background var(--dur) var(--ease), transform 0.12s var(--ease);
 }
-.specbtn:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-3); }
+.specbtn:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-3); transform: translateY(-1px); }
+.specbtn:active { transform: none; }
 .specbtn--on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
 .drawer__scrim {
@@ -746,7 +873,9 @@ body::before {
   border-left: 1px solid var(--line-strong);
   box-shadow: -20px 0 52px rgba(0, 0, 0, 0.55);
   transform: translateX(101%);
-  transition: transform var(--dur) var(--ease);
+  /* A touch slower than --dur with a hard stop — a 460px panel travelling at
+     button speed reads as a glitch, not a slide. */
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
   z-index: 40;
 }
 .drawer--open { transform: none; }

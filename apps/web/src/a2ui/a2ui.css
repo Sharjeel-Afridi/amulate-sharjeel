@@ -264,7 +264,22 @@
   text-align: left;
   transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.3, 1),
     border-color 0.22s ease, box-shadow 0.22s ease;
+  animation: card-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
+
+/* Results are dealt, not dumped: each card lands a beat after the one before.
+   Eight covers the whole shortlist; anything later just plays with no delay. */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.a2ui-host .a2ui-carcard:nth-child(2) { animation-delay: 0.06s; }
+.a2ui-host .a2ui-carcard:nth-child(3) { animation-delay: 0.12s; }
+.a2ui-host .a2ui-carcard:nth-child(4) { animation-delay: 0.18s; }
+.a2ui-host .a2ui-carcard:nth-child(5) { animation-delay: 0.24s; }
+.a2ui-host .a2ui-carcard:nth-child(6) { animation-delay: 0.3s; }
+.a2ui-host .a2ui-carcard:nth-child(7) { animation-delay: 0.36s; }
+.a2ui-host .a2ui-carcard:nth-child(8) { animation-delay: 0.42s; }
 
 /* The pool of light the car stands in. */
 .a2ui-host .a2ui-carcard::before {
@@ -294,9 +309,17 @@
 }
 
 .a2ui-host .a2ui-carcard[role='button']:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+}
+.a2ui-host .a2ui-carcard[role='button']:active {
+  transform: translateY(-1px) scale(0.995);
+}
+
+/* The car eases forward off its plinth when the card is considered. */
+.a2ui-host .a2ui-carcard[role='button']:hover .a2ui-carcard__img {
+  transform: translateX(6px) scale(1.02);
 }
 
 .a2ui-host .a2ui-carcard--selected {
@@ -321,6 +344,7 @@
   border-radius: 0;
   background: none;
   filter: drop-shadow(0 12px 14px rgba(0, 0, 0, 0.55));
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 .a2ui-host .a2ui-carcard__body {
@@ -331,8 +355,8 @@
 }
 
 .a2ui-host .a2ui-carcard__title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--text, #f2f4f7);
 }
@@ -365,6 +389,14 @@
   background: linear-gradient(90deg, rgba(200, 255, 61, 0.55), var(--accent, #c8ff3d));
   border-radius: 99px;
   box-shadow: 0 0 10px rgba(200, 255, 61, 0.4);
+  /* Sweeps up to its value on arrival — a score that draws itself reads as
+     measured; one that just sits there reads as decoration. */
+  transform-origin: left;
+  animation: score-sweep 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) 0.2s both;
+}
+@keyframes score-sweep {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 .a2ui-host .a2ui-matchscore__value {
   color: var(--accent, #c8ff3d);
@@ -513,6 +545,11 @@
   padding: 0;
   filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
 }
+/* Laid on its side there is no plinth to ease off — the drive-forward hover
+   would push the car into its own spec text. */
+.a2ui-host .a2ui-carcard--compact[role='button']:hover .a2ui-carcard__img {
+  transform: none;
+}
 .a2ui-host .a2ui-carcard--compact .a2ui-carcard__body { padding: 0; gap: 4px; min-width: 0; flex: 1; }
 .a2ui-host .a2ui-carcard--compact .a2ui-carcard__title { font-size: 13.5px; }
 .a2ui-host .a2ui-carcard--compact .a2ui-carcard__subtitle { font-size: 10.5px; }
@@ -529,7 +566,9 @@
   gap: 16px;
   padding: 11px 2px;
   border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  transition: background 0.14s ease;
 }
+.a2ui-host .a2ui-specrow--editable:hover { background: rgba(255, 255, 255, 0.025); }
 .a2ui-host .a2ui-specrow:last-child { border-bottom: 0; }
 
 .a2ui-host .a2ui-specrow__label {
@@ -757,9 +796,9 @@
 .stage .a2ui-host .a2ui-carcard::before { height: 210px; }
 .stage .a2ui-host .a2ui-carcard::after { top: 206px; }
 .stage .a2ui-host .a2ui-carcard__body { padding: 16px 18px 18px; gap: 9px; }
-.stage .a2ui-host .a2ui-carcard__title { font-size: 18px; }
+.stage .a2ui-host .a2ui-carcard__title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .stage .a2ui-host .a2ui-carcard__subtitle { font-size: 12px; }
-.stage .a2ui-host .a2ui-pricebadge__amount { font-size: 21px; }
+.stage .a2ui-host .a2ui-pricebadge__amount { font-size: 24px; font-weight: 700; }
 
 /* The compact tail keeps its own proportions against the wider container. */
 .stage .a2ui-host .a2ui-carcard--compact .a2ui-carcard__img {
@@ -769,9 +808,16 @@
 }
 .stage .a2ui-host .a2ui-carcard--compact .a2ui-carcard__title { font-size: 14.5px; }
 
-/* Headings on the stage, now that they head a page rather than a panel. */
-.stage .a2ui-host h4 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-.stage .a2ui-host h5 { font-size: 13px; color: var(--faint, #6b7480); }
+/* Headings on the stage, now that they head a page rather than a panel. The
+   h4 is the page's one headline; the h5s are section labels and read as such. */
+.stage .a2ui-host h4 { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; }
+.stage .a2ui-host h5 {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint, #6b7480);
+}
 
 /* One car in full — the detail view is a single column, centred. */
 .stage .a2ui-host div:has(> .a2ui-carcard):not(:has(> .a2ui-carcard + .a2ui-carcard)) {
@@ -795,15 +841,31 @@
 
 .interview .a2ui-host .chip {
   font-size: 14.5px;
+  font-weight: 500;
   padding: 9px 18px;
   border-radius: 999px;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease,
+    box-shadow 0.16s ease;
+}
+.interview .a2ui-host .chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.interview .a2ui-host .chip:active { transform: scale(0.97); }
+.interview .a2ui-host .chip[aria-pressed='true'] {
+  animation: chip-pick 0.25s var(--ease, ease);
+}
+@keyframes chip-pick {
+  0% { transform: scale(0.94); }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); }
 }
 
 .interview .a2ui-host button:not(.chip) {
   width: 100%;
-  padding: 12px 20px;
-  font-size: 14.5px;
-  font-weight: 600;
+  padding: 13px 20px;
+  font-size: 15px;
+  font-weight: 650;
   border-radius: 11px;
   background: var(--accent, #c8ff3d);
   border-color: var(--accent, #c8ff3d);
@@ -813,6 +875,27 @@
   filter: brightness(1.08);
   border-color: var(--accent, #c8ff3d);
   background: var(--accent, #c8ff3d);
+  box-shadow: 0 4px 16px rgba(200, 255, 61, 0.22);
+}
+
+/* The interview's escape hatch — "← Back" renders as a quiet text link under
+   the primary, never as a second lime button competing with Continue. */
+.interview .a2ui-host button:not(.chip):last-of-type:not(:only-of-type) {
+  width: auto;
+  margin: 2px auto 0;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+  color: var(--faint, #6b7480);
+  box-shadow: none;
+  animation: none;
+}
+.interview .a2ui-host button:not(.chip):last-of-type:not(:only-of-type):hover {
+  color: var(--text, #f4f6f8);
+  background: rgba(255, 255, 255, 0.05);
+  filter: none;
 }
 
 /* Text, date and number answers get the same presence as the chips. */
