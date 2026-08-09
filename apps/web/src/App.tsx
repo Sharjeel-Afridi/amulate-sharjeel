@@ -1,5 +1,6 @@
 import { PHASES, type Phase } from '@car/shared'
 import { A2uiHost, type A2uiClientAction } from './a2ui/index.js'
+import { Intro, shouldPlayIntro } from './intro/index.js'
 import { McpAppCard } from './mcp/index.js'
 import { type ChatItem, useSession } from './session.js'
 import { useEffect, useRef, useState } from 'react'
@@ -208,6 +209,15 @@ export function App() {
   const { state, items, a2ui, busy, send, sendAction, callTool } = useSession()
   const [renderErrors, setRenderErrors] = useState<string[]>([])
 
+  // Three states, not two: the intro stays mounted through `handover` so the
+  // car pulling away and the cockpit arriving are one crossfade rather than a
+  // cut. The cockpit renders from the first frame either way — it opens the
+  // session and the SSE stream while the intro is still on screen, so the agent
+  // has already said hello by the time the user sees it.
+  const [entry, setEntry] = useState<'intro' | 'handover' | 'app'>(() =>
+    shouldPlayIntro() ? 'intro' : 'app',
+  )
+
   const onError = (e: unknown) => {
     const message = e instanceof Error ? e.message : String(e)
     // Surface rather than swallow: a silently dropped A2UI message shows up as a
@@ -226,23 +236,36 @@ export function App() {
   const hasResults = (state?.shortlist.length ?? 0) > 0
 
   return (
-    <main className="cockpit">
-      <JourneyRail phase={state?.phase ?? 'interview'} a2ui={a2ui} onError={onError} />
-      <Conversation
-        items={items}
-        busy={busy}
-        a2ui={a2ui}
-        onSend={send}
-        onAction={onAction}
-        onCallTool={callTool}
-        onError={onError}
-      />
-      <Stage a2ui={a2ui} hasResults={hasResults} onAction={onAction} onError={onError} />
-      {renderErrors.length > 0 && (
-        <div className="render-errors" role="alert">
-          {renderErrors.length} UI message(s) failed to render — see console.
-        </div>
+    <>
+      <div
+        className={`app-shell${entry === 'intro' ? ' app-shell--behind' : ''}`}
+        // Nothing behind the intro should be tabbable or announced while it
+        // owns the screen — ↑ is the only control that exists at that point.
+        inert={entry === 'intro'}
+      >
+        <main className="cockpit">
+          <JourneyRail phase={state?.phase ?? 'interview'} a2ui={a2ui} onError={onError} />
+          <Conversation
+            items={items}
+            busy={busy}
+            a2ui={a2ui}
+            onSend={send}
+            onAction={onAction}
+            onCallTool={callTool}
+            onError={onError}
+          />
+          <Stage a2ui={a2ui} hasResults={hasResults} onAction={onAction} onError={onError} />
+          {renderErrors.length > 0 && (
+            <div className="render-errors" role="alert">
+              {renderErrors.length} UI message(s) failed to render — see console.
+            </div>
+          )}
+        </main>
+      </div>
+
+      {entry !== 'app' && (
+        <Intro onLaunch={() => setEntry('handover')} onDone={() => setEntry('app')} />
       )}
-    </main>
+    </>
   )
 }
