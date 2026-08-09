@@ -6,6 +6,8 @@ import {
   handlePaymentConfirmed,
   recordAnswer,
   runResearch,
+  showCarDetail,
+  showResults,
   showSpec,
   startBooking,
 } from './journey.js'
@@ -89,7 +91,16 @@ export class ScriptedDriver implements AgentDriver {
       return
     }
 
+    // Selecting opens the car; booking is a separate, deliberate second tap.
     if (name === 'selectCar') {
+      const listingId = String(context.listingId ?? '')
+      if (listingId && showCarDetail(ctx, listingId)) return
+      if (listingId) return startBooking(ctx, listingId)
+    }
+
+    if (name === 'backToResults') return showResults(ctx)
+
+    if (name === 'bookCar') {
       const listingId = String(context.listingId ?? '')
       if (listingId) return startBooking(ctx, listingId)
     }

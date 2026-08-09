@@ -8,6 +8,7 @@ import {
   screen,
 } from '@car/shared'
 import {
+  buildCarDetailSurface,
   buildCatalogueSurface,
   buildJourneySurface,
   buildQuestionSurface,
@@ -251,6 +252,27 @@ export async function runResearch(
       rationale: r.rationale,
     })),
   }
+}
+
+/**
+ * Opens one car in full on the stage.
+ *
+ * Selecting a card used to go straight to the booking form. Putting the whole
+ * specification and the factor-by-factor scoring in between costs one tap and
+ * turns "here is a car, pay for it" into a decision someone can actually check.
+ */
+export function showCarDetail(ctx: TurnContext, listingId: string): boolean {
+  const entry = ctx.state.shortlist.find((r) => r.listing.id === listingId)
+  if (!entry) return false
+
+  ctx.a2ui(buildCarDetailSurface(entry))
+  ctx.step(`Opened ${entry.listing.brand} ${entry.listing.model}`, 'Full spec and scoring on the stage')
+  return true
+}
+
+/** Returns the stage to the ranked list. */
+export function showResults(ctx: TurnContext): void {
+  ctx.a2ui(buildCatalogueSurface(ctx.state.shortlist))
 }
 
 /** Opens the booking form for a listing, as an MCP App in the conversation. */

@@ -430,6 +430,39 @@
   box-shadow: 0 0 0 3px rgba(200, 255, 61, 0.14);
 }
 
+/* ==========================================================================
+   Compact card — everything below the leading few.
+   ==========================================================================
+   Same component, laid on its side. The staged treatment is what makes the top
+   results feel chosen; giving it to all eight makes none of them feel chosen,
+   and turns the stage into five screens of scrolling.
+*/
+
+.a2ui-host .a2ui-carcard--compact {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px 10px 10px;
+  background: var(--surface-2, #15181d);
+}
+.a2ui-host .a2ui-carcard--compact::before,
+.a2ui-host .a2ui-carcard--compact::after { display: none; }
+
+.a2ui-host .a2ui-carcard--compact .a2ui-carcard__img {
+  width: 104px;
+  height: 62px;
+  flex: none;
+  padding: 0;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
+}
+.a2ui-host .a2ui-carcard--compact .a2ui-carcard__body { padding: 0; gap: 4px; min-width: 0; flex: 1; }
+.a2ui-host .a2ui-carcard--compact .a2ui-carcard__title { font-size: 13.5px; }
+.a2ui-host .a2ui-carcard--compact .a2ui-carcard__subtitle { font-size: 10.5px; }
+/* The chips are the first thing to go: at this size they wrap into a block
+   taller than the card itself, and the same figures are on the detail view. */
+.a2ui-host .a2ui-carcard--compact .a2ui-carcard__tags { display: none; }
+.a2ui-host .a2ui-carcard--compact .a2ui-matchscore__bar { max-width: 70px; }
+
 /* Spec sheet rows — the interview's answers, paired and aligned. */
 .a2ui-host .a2ui-specrow {
   display: flex;

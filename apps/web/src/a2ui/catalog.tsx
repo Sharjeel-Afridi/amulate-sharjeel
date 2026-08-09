@@ -46,6 +46,8 @@ export const CarCardApi = {
     imageUrl: CommonSchemas.DynamicString.optional(),
     tags: CommonSchemas.DynamicStringList.optional(),
     selected: CommonSchemas.DynamicBoolean.optional(),
+    /** Lays the card out horizontally, for results below the leading few. */
+    compact: CommonSchemas.DynamicBoolean.optional(),
     /** Id of a component rendered in the card body — use a Row/Column to compose. */
     child: z.string().optional(),
     action: CommonSchemas.Action.optional(),
@@ -58,7 +60,11 @@ export const CarCard = createComponentImplementation(CarCardApi, ({ props, build
 
   return (
     <div
-      className={`a2ui-carcard${props.selected ? ' a2ui-carcard--selected' : ''}`}
+      className={
+        'a2ui-carcard' +
+        (props.selected ? ' a2ui-carcard--selected' : '') +
+        (props.compact ? ' a2ui-carcard--compact' : '')
+      }
       // Cards double as the primary "pick this one" affordance, so the whole
       // card is the hit target when the agent attached an action.
       onClick={clickable ? props.action : undefined}

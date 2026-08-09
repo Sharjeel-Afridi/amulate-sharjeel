@@ -268,6 +268,23 @@ function Stage({
 }) {
   const hasResults = resultCount > 0
   const [tab, setTab] = useState<'matches' | 'spec'>('spec')
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  // The stage swaps whole views — searching, the ranked list, one car in full.
+  // Each is a new page and belongs at the top; keeping the old scroll position
+  // opens a car's detail half way down its own specification. Counting the
+  // messages that actually rebuild the stage avoids reacting to the spec sheet
+  // filling in on the other tab.
+  const stageUpdates = useMemo(
+    () =>
+      a2ui.filter(
+        (m) => (m as { updateComponents?: { surfaceId?: string } }).updateComponents?.surfaceId === 'stage',
+      ).length,
+    [a2ui],
+  )
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [stageUpdates])
 
   // Results arriving is the moment the stage has something better to show than
   // the spec, so it switches itself — once. A later manual switch back sticks.
@@ -307,7 +324,7 @@ function Stage({
         </div>
       </header>
 
-      <div className="panel__body">
+      <div className="panel__body" ref={bodyRef}>
         {tab === 'matches' ? (
           <A2uiHost messages={a2ui} surfaceId="stage" onAction={onAction} onError={onError} />
         ) : (
