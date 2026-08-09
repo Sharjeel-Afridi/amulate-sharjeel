@@ -232,7 +232,10 @@ export async function runResearch(
     // qualified" will sooner or later say three, and a wrong number in the first
     // sentence discredits the correct reasoning after it. It supplies the
     // judgement; the arithmetic stays here.
-    const lead = `${shortlist.length} cars clear every condition.${excluded}`
+    const lead =
+      shortlist.length === 1
+        ? `One car clears every condition.${excluded}`
+        : `${shortlist.length} cars clear every condition.${excluded}`
     ctx.say(
       summary
         ? `${lead} ${summary}`

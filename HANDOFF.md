@@ -40,13 +40,18 @@ deck, video, and spec-driven development.
 
 ```
 web (React 19 + Vite)        api (Express)                    mcp-marketplace
-├─ chat + composer           ├─ agent loop / phase machine    ├─ search_listings
-├─ A2UI renderer     ◀─SSE──┤ SessionState (source of truth) ├─ get_listing
+├─ journey bar               ├─ agent loop / phase machine    ├─ search_listings
+├─ chat + composer   ◀─SSE──┤ SessionState (source of truth) ├─ get_listing
 ├─ MCP Apps host             └─ iframe tool-call proxy   MCP ─┤ check_availability
-└─ journey rail                                               ├─ ui:// booking-form
+└─ stage (A2UI)                                               ├─ ui:// booking-form
    :5173                          :8080                       └─ ui:// checkout
                                                                     :8081
 ```
+
+**Layout:** a journey bar (brand · phase stepper · live spec chips) over two
+columns — conversation and stage. The stage tabs between the ranked matches and
+the spec sheet. There is no left rail: it cost ~270px to show four dots, and the
+conversation needs that width for the booking widget.
 
 **Workspaces:** `packages/{shared,catalog,ranking}`, `apps/{web,api,mcp-marketplace}`.
 TypeScript everywhere, ESM, Node 22+, `tsx` runs servers directly (no build step).
@@ -76,8 +81,10 @@ That split is why a free-tier model is sufficient.
 | Ranking engine, separate rent/buy scoring, criterion-citing rationales | ✅ |
 | Criteria model: exclusion / requirement / preference | ✅ |
 | 11-question interview with spec-confirmation gate | ✅ |
-| Three-zone cockpit, dark showroom skin, game car-select cards | ✅ |
-| A2UI custom catalog (CarCard, MatchScore, PriceBadge, ReasoningStep) | ✅ |
+| Journey bar + two-column cockpit, dark showroom skin, game car-select cards | ✅ |
+| A2UI custom catalog (CarCard, MatchScore, PriceBadge, ReasoningStep, SpecRow) | ✅ |
+| Booking as one four-step MCP App: period → extras → driver → payment → receipt | ✅ |
+| Results split into a leading three, a compact tail, and a per-car detail view | ✅ |
 | Docker: 3 services, `docker compose up`, verified end to end | ✅ |
 | README, `.env.example`, specs | ✅ |
 | Agent mode switch (scripted ↔ real model) | ✅ |
@@ -89,9 +96,10 @@ That split is why a free-tier model is sufficient.
 - **Video demo** — hard requirement, not started
 - **Ruled-out cars UI** — data is captured in `state.ruledOut` with per-criterion
   verdicts and evidence; the panel to display them isn't built
-- **Per-card criteria evidence table** — same, data exists, UI doesn't
 - Langfuse/OTel observability (bonus, likely cut)
-- Checkout half never clicked through in a browser (API smoke proves it server-side)
+
+The per-car scoring breakdown is now built: selecting a card opens a detail view
+with the full specification and every `ScoreFactor` signed and explained.
 
 ---
 
@@ -132,6 +140,15 @@ That split is why a free-tier model is sufficient.
   Must set an explicit background.
 - Contract lives in `packages/shared/src/mcp-app-protocol.ts`. Protocol version
   `2026-01-26`.
+- **Report size from `document.body`, never `document.documentElement`.** The
+  root box is sized against the iframe viewport, which the host has just set
+  from the previous report — so the measurement can only ever grow. Harmless on
+  a single-page widget, very visible on one with steps.
+- **A sandboxed `srcdoc` iframe cannot be driven by a test harness or devtools**
+  — the opaque origin is the point, but it means no clicks can be dispatched
+  into it. `npm run preview -w @car/mcp-marketplace` renders each widget to
+  `apps/web/public/__widget-*.html` (git-ignored) with `callTool` stubbed, so
+  the flow can be walked at `http://localhost:5173/__widget-rent.html`.
 
 **Agent / providers**
 - **`.env` needs an explicit loader.** ESM hoists imports, so `loadEnv()` at the

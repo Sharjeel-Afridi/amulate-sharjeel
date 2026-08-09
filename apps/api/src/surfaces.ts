@@ -184,8 +184,8 @@ export function buildCatalogueSurface(shortlist: RankedListing[]): A2uiMessage[]
 
   return [
     updateDataModel(SURFACES.stage, '/', {
-      headline: `${shortlist.length} matches, ranked`,
-      restHeadline: `${tail.length} more worth a look`,
+      headline: shortlist.length === 1 ? '1 match' : `${shortlist.length} matches, ranked`,
+      restHeadline: tail.length === 1 ? '1 more worth a look' : `${tail.length} more worth a look`,
       cars: lead,
       rest: tail,
     }),

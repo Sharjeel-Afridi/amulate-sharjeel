@@ -346,7 +346,9 @@ export function requirementCriteria(prefs: Preferences, strictBudget: boolean): 
     out.push({
       id: 'category',
       kind: 'requirement',
-      label: `A ${prefs.category}`,
+      // The category list includes "estate" and "suv", so a fixed article reads
+      // as broken English on the one screen the user is asked to approve.
+      label: `${/^[aeiou]/i.test(prefs.category) ? 'An' : 'A'} ${prefs.category}`,
       field: 'category',
       op: 'eq',
       value: prefs.category,
