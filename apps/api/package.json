@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "eval": "tsx src/evals/run.ts",
+    "eval:judge": "tsx src/evals/judge-check.ts"
   },
   "dependencies": {
     "@car/catalog": "*",
