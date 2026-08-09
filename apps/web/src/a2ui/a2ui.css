@@ -411,6 +411,31 @@
   font-weight: 500;
 }
 
+/* The ChoicePicker's options list is the one element with nothing to hook on:
+   its class comes out as "undefined undefined", so .options/.chips — the flex
+   row, wrap and gap — never land and the chips end up touching. Select the
+   container by what it contains instead. */
+.a2ui-host div:has(> .chip) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Same picker in radio/checkbox mode: a column of unclassed <label>s. */
+.a2ui-host div:has(> label > input[type='radio']),
+.a2ui-host div:has(> label > input[type='checkbox']) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.a2ui-host label:has(> input[type='radio']),
+.a2ui-host label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
 .a2ui-host input[type='range'] { accent-color: var(--accent, #c8ff3d); width: 100%; }
 .a2ui-host input[type='text'],
 .a2ui-host input[type='date'],

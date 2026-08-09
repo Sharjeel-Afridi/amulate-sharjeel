@@ -87,7 +87,8 @@ That split is why a free-tier model is sufficient.
 | Results split into a leading three, a compact tail, and a per-car detail view | ✅ |
 | Docker: 3 services, `docker compose up`, verified end to end | ✅ |
 | README, `.env.example`, specs | ✅ |
-| Agent mode switch (scripted ↔ real model) | ✅ |
+| Agent mode switch (scripted ↔ real model), per session, from the top bar | ✅ |
+| Guided highlight in scripted mode — rings every control the driver handles | ✅ |
 | LLM driver on OpenAI Agents SDK, provider-agnostic | ✅ works, see caveat |
 
 ## Not done

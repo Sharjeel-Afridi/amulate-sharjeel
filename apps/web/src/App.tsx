@@ -1,4 +1,4 @@
-import { PHASES, type Phase, type Preferences, money } from '@car/shared'
+import { PHASES, type DriverMode, type Phase, type Preferences, money } from '@car/shared'
 import { A2uiHost, type A2uiClientAction } from './a2ui/index.js'
 import { Intro, shouldPlayIntro } from './intro/index.js'
 import { McpAppCard } from './mcp/index.js'
@@ -31,18 +31,29 @@ const PHASE_LABELS: Record<Phase, string> = {
   done: 'Done',
 }
 
-/** Theme tokens handed to MCP App iframes so widgets match the host. */
-const HOST_CONTEXT = {
-  theme: 'dark' as const,
-  displayMode: 'inline' as const,
-  locale: 'en-IE',
-  styles: {
-    '--accent': '#c8ff3d',
-    '--accent-ink': '#14200a',
-    // The iframe has nothing behind it, so it needs an explicit surface or it
-    // falls back to white and the dark widget becomes unreadable.
-    '--bg': '#15181d',
-  },
+/**
+ * Theme tokens handed to MCP App iframes so widgets match the host.
+ *
+ * `--guide-ring` is how the guided highlight reaches inside the sandbox. The
+ * host cannot style a cross-origin iframe, but it can hand the guest a token,
+ * and the widget paints its primary button with it — so the booking steps join
+ * the same highlight as everything else instead of being the one place the
+ * trail goes cold.
+ */
+function hostContext(guided: boolean) {
+  return {
+    theme: 'dark' as const,
+    displayMode: 'inline' as const,
+    locale: 'en-IE',
+    styles: {
+      '--accent': '#c8ff3d',
+      '--accent-ink': '#14200a',
+      // The iframe has nothing behind it, so it needs an explicit surface or it
+      // falls back to white and the dark widget becomes unreadable.
+      '--bg': '#15181d',
+      '--guide-ring': guided ? 'rgba(200, 255, 61, 0.55)' : 'transparent',
+    },
+  }
 }
 
 /* -------------------------------------------------------------- top bar */
@@ -76,6 +87,54 @@ function Stepper({ phase }: { phase: Phase }) {
         <b>{PHASE_LABELS[phase]}</b>
       </div>
     </>
+  )
+}
+
+/**
+ * Driver switch.
+ *
+ * Front and centre rather than buried, because the failure it covers is a live
+ * one: a free-tier provider throttling in the middle of a demo. Scripted runs
+ * the same journey through the same tools and surfaces, so flipping it is a
+ * recovery, not a downgrade — and it takes the session's gathered state with it.
+ */
+function ModeToggle({
+  mode,
+  agentAvailable,
+  agentName,
+  onChange,
+}: {
+  mode: DriverMode
+  agentAvailable: boolean
+  agentName: string | null
+  onChange: (mode: DriverMode) => void
+}) {
+  return (
+    <div className="modeswitch" role="group" aria-label="Driver mode">
+      <button
+        type="button"
+        className={`modeswitch__opt${mode === 'scripted' ? ' modeswitch__opt--on' : ''}`}
+        aria-pressed={mode === 'scripted'}
+        onClick={() => onChange('scripted')}
+        title="Deterministic driver — no model, no API key, no rate limits. Highlights the controls to click."
+      >
+        Scripted
+      </button>
+      <button
+        type="button"
+        className={`modeswitch__opt${mode === 'agent' ? ' modeswitch__opt--on' : ''}`}
+        aria-pressed={mode === 'agent'}
+        disabled={!agentAvailable}
+        onClick={() => onChange('agent')}
+        title={
+          agentAvailable
+            ? `Model-backed agent${agentName ? ` — ${agentName}` : ''}`
+            : 'Needs AGENT_API_KEY on the server'
+        }
+      >
+        Agent
+      </button>
+    </div>
   )
 }
 
@@ -133,6 +192,7 @@ function Conversation({
   items,
   busy,
   phase,
+  guided,
   a2ui,
   onSend,
   onAction,
@@ -142,6 +202,8 @@ function Conversation({
   items: ChatItem[]
   busy: boolean
   phase: Phase
+  /** Scripted mode — the widget gets a highlight token with its theme. */
+  guided: boolean
   a2ui: A2uiHostProps['messages']
   onSend: (text: string) => void
   onAction: (action: A2uiClientAction) => void
@@ -208,7 +270,7 @@ function Conversation({
                     key={item.id}
                     label={item.toolName === 'start_booking' ? 'Booking' : item.toolName}
                     html={item.html}
-                    hostContext={HOST_CONTEXT}
+                    hostContext={hostContext(guided)}
                     onCallTool={(name, args) => onCallTool(name, args)}
                   />
                 ) : (
@@ -346,7 +408,7 @@ function Stage({
 /* ------------------------------------------------------------------ app */
 
 export function App() {
-  const { state, items, a2ui, busy, send, sendAction, callTool } = useSession()
+  const { state, items, a2ui, busy, agent, send, sendAction, callTool, setMode } = useSession()
   const [renderErrors, setRenderErrors] = useState<string[]>([])
 
   // Three states, not two: the intro stays mounted through `handover` so the
@@ -374,11 +436,16 @@ export function App() {
   }
 
   const phase = state?.phase ?? 'interview'
+  const mode: DriverMode = state?.mode ?? 'scripted'
 
   return (
     <>
       <div
         className={`app-shell${entry === 'intro' ? ' app-shell--behind' : ''}`}
+        // Scripted mode turns on the guided highlight: every control the
+        // deterministic driver handles gets a ring, so whoever is demoing can
+        // see the path without having read the driver.
+        data-guide={mode === 'scripted' ? 'on' : 'off'}
         // Nothing behind the intro should be tabbable or announced while it
         // owns the screen — ↑ is the only control that exists at that point.
         inert={entry === 'intro'}
@@ -390,14 +457,32 @@ export function App() {
               <span className="brand__name">Car Matchmaker</span>
             </div>
             <Stepper phase={phase} />
-            <SpecChips preferences={state?.preferences ?? {}} />
+            <div className="topbar__right">
+              <ModeToggle
+                mode={mode}
+                agentAvailable={agent.available}
+                agentName={agent.name}
+                onChange={(next) => void setMode(next)}
+              />
+              <SpecChips preferences={state?.preferences ?? {}} />
+            </div>
           </header>
+
+          {mode === 'scripted' && (
+            <div className="guidebar" role="status">
+              <span className="guidebar__dot" aria-hidden="true" />
+              Scripted demo — no model is called. Click the{' '}
+              <span className="guidebar__swatch" aria-hidden="true" /> highlighted controls to walk
+              the journey. Typing still works, but it is pattern-matched rather than understood.
+            </div>
+          )}
 
           <div className="cockpit__body">
             <Conversation
               items={items}
               busy={busy}
               phase={phase}
+              guided={mode === 'scripted'}
               a2ui={a2ui}
               onSend={send}
               onAction={onAction}

@@ -84,8 +84,19 @@ export interface Booking {
  * Single source of truth, shared by the agent and the UI. The web client mirrors
  * this into the A2UI data model, so a patch here updates the journey rail.
  */
+/**
+ * Which driver runs the conversation.
+ *
+ * Held per session rather than per process so it can be switched from the UI
+ * mid-demo. A provider that starts throttling three minutes into a presentation
+ * should cost one click, not a server restart.
+ */
+export type DriverMode = 'scripted' | 'agent'
+
 export interface SessionState {
   sessionId: string
+  /** Which driver answers this session's turns. */
+  mode: DriverMode
   phase: Phase
   interview: InterviewState
   preferences: Preferences
@@ -101,10 +112,11 @@ export interface SessionState {
   updatedAt: string
 }
 
-export function createSessionState(sessionId: string): SessionState {
+export function createSessionState(sessionId: string, mode: DriverMode = 'scripted'): SessionState {
   const now = new Date().toISOString()
   return {
     sessionId,
+    mode,
     phase: 'interview',
     interview: { answered: [], complete: false, confirmed: false },
     preferences: {},

@@ -191,6 +191,25 @@ html, body {
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+
+/*
+ * The host's guided highlight, reaching inside the sandbox.
+ *
+ * A cross-origin iframe cannot be styled from outside, but the host hands us
+ * --guide-ring over the initialize handshake and we paint with it. Default
+ * transparent, so agent mode is unaffected and the rule costs nothing.
+ */
+.btn--primary:not(:disabled) {
+  box-shadow: 0 0 0 3px var(--guide-ring, transparent);
+  transition: box-shadow .2s;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn--primary:not(:disabled) { animation: guide-pulse 2.4s cubic-bezier(.2,.7,.3,1) infinite; }
+  @keyframes guide-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--guide-ring, transparent); }
+    50% { box-shadow: 0 0 0 4px var(--guide-ring, transparent); }
+  }
+}
 .btn--back { padding: 0 14px; border-color: transparent; color: var(--muted); }
 .btn--back:hover:not(:disabled) { color: var(--text); }
 

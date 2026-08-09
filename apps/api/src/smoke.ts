@@ -75,6 +75,17 @@ const created = (await (await fetch(`${API}/api/session`, { method: 'POST' })).j
 }
 console.log(`session ${created.sessionId}\n`)
 
+// Pin the driver rather than inheriting whatever the server booted with. The
+// scripted path exercises the same tools, state and surfaces, and a smoke test
+// that quietly starts spending a rate-limited quota is a test that fails for
+// reasons having nothing to do with the code under test.
+const pinned = await fetch(`${API}/api/session/${created.sessionId}/mode`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ mode: 'scripted' }),
+})
+if (!pinned.ok) failures.push('could not pin the session to the scripted driver')
+
 const controller = new AbortController()
 const streaming = readStream(created.sessionId, controller.signal).catch(() => {})
 await wait(300)

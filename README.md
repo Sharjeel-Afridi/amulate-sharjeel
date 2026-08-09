@@ -35,13 +35,30 @@ That starts all three services: the MCP marketplace on `:8081`, the API on
 
 ### Scripted mode and agent mode
 
-The app runs either way, and the switch is one environment variable.
+**There is a toggle in the top bar.** Both drivers are loaded at boot and each
+session picks one, so switching is a click — mid-conversation is fine, and
+everything gathered so far carries across. If a free-tier provider starts
+throttling in the middle of a demo, that is the recovery: no restart, no lost
+state.
 
-| `.env` | Driver |
-|---|---|
-| *(nothing set)* | **Scripted** — deterministic, no model, no key, no network |
-| `AGENT_API_KEY=…` | **Agent** — the model chooses questions and tools |
-| `AGENT_API_KEY=…` + `AGENT_MODE=scripted` | **Scripted**, forced |
+Flipping to **Scripted** also turns on a guided highlight: every control the
+deterministic driver handles gets a ring, including the primary button inside
+the booking widget's sandboxed iframe. Whoever is presenting can see the path
+without having read `scripted-driver.ts`. Typing still works in scripted mode,
+but it is pattern-matched rather than understood, so the highlighted controls
+are the reliable route.
+
+The environment sets the **default** a new session starts in:
+
+| `.env` | Default driver | Toggle |
+|---|---|---|
+| *(nothing set)* | **Scripted** — no model, no key, no network | Agent disabled |
+| `AGENT_API_KEY=…` | **Agent** — the model chooses questions and tools | Both available |
+| `AGENT_API_KEY=…` + `AGENT_MODE=scripted` | **Scripted** | Both available |
+
+`GET /api/health` reports `defaultMode` and `agentAvailable`;
+`POST /api/session/:id/mode` takes `{"mode":"scripted"|"agent"}` and 409s if the
+agent driver was never configured.
 
 ```bash
 AGENT_PROVIDER=gemini              # gemini | groq | openai
@@ -59,9 +76,9 @@ choice of what to say next differs. A missing key **falls back rather than
 failing**: an app that boots and works beats one that refuses to start over an
 optional key.
 
-Scripted mode is not only a stand-in. It is the demo fallback — if a free-tier
-provider throttles mid-presentation, `AGENT_MODE=scripted` gives an instant,
-complete, repeatable run.
+Scripted mode is not only a stand-in. It is the demo fallback — one click gives
+an instant, complete, repeatable run, and `npm run smoke -w @car/api` pins
+itself to it so the test never spends a rate-limited quota.
 
 ---
 

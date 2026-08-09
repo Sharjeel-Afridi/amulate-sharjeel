@@ -1,4 +1,4 @@
-import type { Phase, Preferences, RankedListing, SessionState } from '@car/shared'
+import type { DriverMode, Phase, Preferences, RankedListing, SessionState } from '@car/shared'
 import cors from 'cors'
 import express from 'express'
 import type { A2uiMessage } from './a2ui.js'
@@ -20,39 +20,47 @@ import { nextQuestion } from './interview.js'
 const PORT = Number(process.env.API_PORT ?? 8080)
 
 /**
- * Which driver runs the conversation.
+ * Both drivers are built at boot, and each session picks one.
  *
- * `AGENT_MODE=scripted` forces the deterministic path even when a key is
- * present — useful for a demo you need to be repeatable, or when a free-tier
- * provider starts throttling mid-presentation. Otherwise a configured
- * `AGENT_API_KEY` selects the model-backed driver, and its absence falls back
- * rather than failing: an app that boots and works beats one that refuses to
- * start because an optional key is missing.
+ * This used to be a single process-wide choice made from the environment, which
+ * meant recovering from a throttled provider mid-presentation involved
+ * restarting the server. The deterministic driver exercises the same journey,
+ * the same tools and the same surfaces — only the wording is canned — so having
+ * it one click away is worth far more than having it configured.
+ *
+ * The model-backed driver is optional: no key, or a constructor that throws,
+ * leaves `agentDriver` undefined and the UI offers scripted only. An app that
+ * boots and works beats one that refuses to start over an optional key.
  */
-function selectDriver(): AgentDriver {
-  const forced = process.env.AGENT_MODE?.trim().toLowerCase()
-  if (forced === 'scripted') {
-    console.log('[api] AGENT_MODE=scripted — using the deterministic driver')
-    return new ScriptedDriver()
-  }
+const scriptedDriver = new ScriptedDriver()
 
+const agentDriver: AgentDriver | undefined = (() => {
   const cfg = readAgentConfig()
   if (!cfg) {
-    console.log('[api] no AGENT_API_KEY — using the deterministic driver')
-    return new ScriptedDriver()
+    console.log('[api] no AGENT_API_KEY — agent mode unavailable, scripted only')
+    return undefined
   }
-
   try {
     const driver = new LlmAgentDriver(cfg)
-    console.log(`[api] agent mode: ${cfg.provider} / ${cfg.model}`)
+    console.log(`[api] agent mode available: ${cfg.provider} / ${cfg.model}`)
     return driver
   } catch (err) {
-    console.error('[api] agent setup failed, falling back to scripted:', err)
-    return new ScriptedDriver()
+    console.error('[api] agent setup failed, scripted only:', err)
+    return undefined
   }
-}
+})()
 
-const driver = selectDriver()
+/**
+ * What a new session starts as. `AGENT_MODE=scripted` still forces the
+ * deterministic path, and it remains the default when no key is configured.
+ */
+const DEFAULT_MODE: DriverMode =
+  process.env.AGENT_MODE?.trim().toLowerCase() === 'scripted' || !agentDriver ? 'scripted' : 'agent'
+
+/** Falls back rather than failing: a session asking for an absent driver gets scripted. */
+function driverFor(state: SessionState): AgentDriver {
+  return state.mode === 'agent' && agentDriver ? agentDriver : scriptedDriver
+}
 
 const app = express()
 app.use(cors({ origin: true }))
@@ -113,12 +121,59 @@ function makeContext(state: SessionState): TurnContext {
 }
 
 app.get('/api/health', async (_req, res) => {
-  res.json({ status: 'ok', driver: driver.name, mcp: await health() })
+  res.json({
+    status: 'ok',
+    driver: agentDriver && DEFAULT_MODE === 'agent' ? agentDriver.name : scriptedDriver.name,
+    defaultMode: DEFAULT_MODE,
+    agentAvailable: Boolean(agentDriver),
+    agentName: agentDriver?.name ?? null,
+    mcp: await health(),
+  })
 })
 
 app.post('/api/session', (_req, res) => {
-  const state = createSession()
-  res.json({ sessionId: state.sessionId, state })
+  const state = createSession(DEFAULT_MODE)
+  res.json({
+    sessionId: state.sessionId,
+    state,
+    // The client renders the mode toggle from this, so it never offers a driver
+    // the server cannot actually run.
+    agentAvailable: Boolean(agentDriver),
+    agentName: agentDriver?.name ?? null,
+  })
+})
+
+/**
+ * Switch this session's driver.
+ *
+ * Mid-session is deliberately allowed. The two drivers share `journey.ts` and
+ * operate on the same `SessionState`, so everything gathered so far — answers,
+ * criteria, shortlist — carries across intact.
+ */
+app.post('/api/session/:id/mode', (req, res) => {
+  const state = getSession(req.params.id)
+  if (!state) return res.status(404).json({ error: 'no such session' })
+
+  const mode = String(req.body?.mode ?? '') as DriverMode
+  if (mode !== 'scripted' && mode !== 'agent') {
+    return res.status(400).json({ error: 'mode must be "scripted" or "agent"' })
+  }
+  if (mode === 'agent' && !agentDriver) {
+    return res.status(409).json({ error: 'Agent mode needs AGENT_API_KEY. Scripted is the only driver available.' })
+  }
+
+  update(req.params.id, (s) => {
+    s.mode = mode
+  })
+  emit(req.params.id, {
+    type: 'step',
+    label: mode === 'agent' ? 'Switched to the model-backed agent' : 'Switched to the scripted driver',
+    detail:
+      mode === 'agent'
+        ? agentDriver?.name
+        : 'Deterministic: same tools, same surfaces, canned wording',
+  })
+  return res.json({ mode })
 })
 
 /** SSE stream. The browser opens this once and keeps it for the session. */
@@ -181,7 +236,7 @@ app.post('/api/session/:id/message', async (req, res) => {
 
   const ctx = makeContext(state)
   try {
-    await driver.handleUserMessage(ctx, text)
+    await driverFor(state).handleUserMessage(ctx, text)
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',
@@ -205,7 +260,7 @@ app.post('/api/session/:id/action', async (req, res) => {
 
   const ctx = makeContext(state)
   try {
-    await driver.handleUiAction(ctx, name, context)
+    await driverFor(state).handleUiAction(ctx, name, context)
   } catch (err) {
     emit(state.sessionId, {
       type: 'error',
@@ -236,7 +291,7 @@ app.post('/api/session/:id/tool', async (req, res) => {
     res.json({ content: [{ type: 'text', text: JSON.stringify(result) }] })
 
     const ctx = makeContext(state)
-    await driver.handleAppToolResult(ctx, name, result)
+    await driverFor(state).handleAppToolResult(ctx, name, result)
     emit(state.sessionId, { type: 'idle' })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'tool call failed'
@@ -247,5 +302,8 @@ app.post('/api/session/:id/tool', async (req, res) => {
 })
 
 app.listen(PORT, () => {
-  console.log(`[api] car matchmaker on http://localhost:${PORT} (driver: ${driver.name})`)
+  console.log(
+    `[api] car matchmaker on http://localhost:${PORT} ` +
+      `(default: ${DEFAULT_MODE}${agentDriver ? `, agent available: ${agentDriver.name}` : ', scripted only'})`,
+  )
 })

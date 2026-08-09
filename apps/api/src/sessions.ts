@@ -1,4 +1,4 @@
-import { type Preferences, type SessionState, createSessionState } from '@car/shared'
+import { type DriverMode, type Preferences, type SessionState, createSessionState } from '@car/shared'
 import { randomUUID } from 'node:crypto'
 import type { ServerEvent } from './events.js'
 
@@ -22,8 +22,8 @@ interface Session {
 
 const sessions = new Map<string, Session>()
 
-export function createSession(): SessionState {
-  const state = createSessionState(randomUUID())
+export function createSession(mode: DriverMode = 'scripted'): SessionState {
+  const state = createSessionState(randomUUID(), mode)
   sessions.set(state.sessionId, { state, listeners: new Set() })
   return state
 }

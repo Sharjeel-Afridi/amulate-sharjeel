@@ -1,5 +1,5 @@
 import type { A2uiMessage } from '@a2ui/web_core/v0_9'
-import type { Phase, RankedListing, SessionState } from '@car/shared'
+import type { DriverMode, Phase, RankedListing, SessionState } from '@car/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
@@ -42,6 +42,11 @@ export function useSession() {
   const [a2ui, setA2ui] = useState<A2uiMessage[]>([])
   const [busy, setBusy] = useState(false)
   const [connected, setConnected] = useState(false)
+  /** Whether the server has a model-backed driver at all. */
+  const [agent, setAgent] = useState<{ available: boolean; name: string | null }>({
+    available: false,
+    name: null,
+  })
   const sessionRef = useRef<string | undefined>(undefined)
 
   // Create a session once, then hold the stream open for its lifetime.
@@ -51,12 +56,18 @@ export function useSession() {
 
     void (async () => {
       const res = await fetch('/api/session', { method: 'POST' })
-      const body = (await res.json()) as { sessionId: string; state: SessionState }
+      const body = (await res.json()) as {
+        sessionId: string
+        state: SessionState
+        agentAvailable?: boolean
+        agentName?: string | null
+      }
       if (cancelled) return
 
       sessionRef.current = body.sessionId
       setSessionId(body.sessionId)
       setState(body.state)
+      setAgent({ available: Boolean(body.agentAvailable), name: body.agentName ?? null })
 
       source = new EventSource(`/api/session/${body.sessionId}/stream`)
       source.onopen = () => setConnected(true)
@@ -155,5 +166,32 @@ export function useSession() {
     }
   }, [])
 
-  return { sessionId, state, items, a2ui, busy, connected, send, sendAction, callTool }
+  /**
+   * Switch the driver mid-session.
+   *
+   * Optimistic, then reconciled: the toggle has to feel instant, and the server
+   * broadcasts the authoritative state right after. A rejection (asking for the
+   * agent with no key configured) surfaces in the transcript rather than
+   * silently leaving the switch in the wrong position.
+   */
+  const setMode = useCallback(async (mode: DriverMode) => {
+    const id = sessionRef.current
+    if (!id) return
+    setState((s) => (s ? { ...s, mode } : s))
+    const res = await fetch(`/api/session/${id}/mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    })
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      setState((s) => (s ? { ...s, mode: mode === 'agent' ? 'scripted' : 'agent' } : s))
+      setItems((prev) => [
+        ...prev,
+        { kind: 'error', id: nextId(), text: body.error ?? 'Could not switch mode.' },
+      ])
+    }
+  }, [])
+
+  return { sessionId, state, items, a2ui, busy, connected, agent, send, sendAction, callTool, setMode }
 }

@@ -224,9 +224,122 @@ body::before {
 .stepper__compact { display: none; font-size: var(--fs-small); color: var(--muted); }
 .stepper__compact b { color: var(--accent); font-weight: 600; }
 
+/* ------------------------------------------------------- mode switch */
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.modeswitch {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  border-radius: 99px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+
+.modeswitch__opt {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--faint);
+  font: 600 var(--fs-tiny)/1 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.modeswitch__opt:hover:not(:disabled):not(.modeswitch__opt--on) { color: var(--text); }
+.modeswitch__opt--on { background: var(--surface-3); color: var(--text); box-shadow: var(--shadow-1); }
+.modeswitch__opt:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ---------------------------------------------------------- guide bar */
+
+.guidebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  margin: var(--s3) var(--s3) 0;
+  border: 1px solid rgba(200, 255, 61, 0.28);
+  border-radius: var(--radius);
+  background: rgba(200, 255, 61, 0.06);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+.guidebar__dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+/* A sample of the ring, inline in the sentence, so "highlighted" names
+   something the eye can match rather than something to go hunting for. */
+.guidebar__swatch {
+  display: inline-block;
+  width: 22px; height: 12px;
+  border-radius: 4px;
+  background: rgba(200, 255, 61, 0.1);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+  vertical-align: -1px;
+  margin: 0 2px;
+}
+
+/* ==========================================================================
+   Guided highlight — scripted mode only.
+   ==========================================================================
+   The scripted driver understands every rendered control but only pattern-
+   matches typed prose, so the safe path through a demo is to tap rather than
+   type. Ringing those controls says which they are without anyone having had
+   to read `scripted-driver.ts` first.
+*/
+
+@keyframes guide-ring {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent-dim); }
+  50% { box-shadow: 0 0 0 3px var(--accent), 0 0 14px var(--accent-glow); }
+}
+
+[data-guide="on"] .interview .a2ui-host button,
+[data-guide="on"] .panel--stage .a2ui-host button,
+[data-guide="on"] .panel--stage .a2ui-carcard[role="button"] {
+  animation: guide-ring 2.4s var(--ease) infinite;
+}
+
+/* The chips are one decision between them, so they share a single ring rather
+   than each pulsing on its own — six competing rings is noise, not guidance. */
+[data-guide="on"] .interview .a2ui-host button[aria-pressed] {
+  animation-duration: 3.2s;
+}
+
+/* Motion is the affordance here, so when it is suppressed the ring has to stay
+   on rather than disappear with the animation. */
+@media (prefers-reduced-motion: reduce) {
+  [data-guide="on"] .interview .a2ui-host button,
+  [data-guide="on"] .panel--stage .a2ui-host button,
+  [data-guide="on"] .panel--stage .a2ui-carcard[role="button"] {
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+}
+
 /* --------------------------------------------------------- spec chips */
 
 .specchips { display: flex; align-items: center; gap: var(--s2); justify-content: flex-end; min-width: 0; }
+
+/*
+ * The chips share the bar with the mode switch, so they shed from the least
+ * informative end as space runs out rather than all clipping together. Nothing
+ * is lost by dropping them — the stage's spec tab carries the full sheet.
+ */
+@media (max-width: 1440px) { .specchips .chip:nth-child(n + 4) { display: none; } }
+@media (max-width: 1320px) { .specchips .chip:nth-child(n + 3) { display: none; } }
+@media (max-width: 1180px) { .specchips { display: none; } }
 
 .chip {
   display: inline-flex;
