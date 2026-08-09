@@ -11,11 +11,10 @@ import { ScriptedDriver } from './scripted-driver.js'
 import { createSession, emit, getSession, subscribe, update } from './sessions.js'
 import {
   buildCatalogueSurface,
+  buildInterviewFormSurface,
   buildJourneySurface,
-  buildQuestionSurface,
   initSurfaces,
 } from './surfaces.js'
-import { nextQuestion } from './interview.js'
 
 const PORT = Number(process.env.API_PORT ?? 8080)
 
@@ -210,21 +209,20 @@ app.get('/api/session/:id/stream', (req, res) => {
   const unsubscribe = subscribe(req.params.id, (event) => res.write(sseFrame(event)))
 
   // Open the interview as soon as someone is listening, rather than waiting for
-  // the user to guess that they should type something first.
-  if (state.interview.answered.length === 0 && !state.interview.pending) {
-    const first = nextQuestion(state.preferences, new Set())
-    if (first) {
-      update(req.params.id, (s) => {
-        s.interview.pending = first.id
-      })
-      // Tagged as the first question's asking: this greeting *is* the mode
-      // question, and without the tag, backing all the way up appends a second
-      // copy of it under this one instead of rewinding the thread to the top.
-      res.write(
-        sseFrame({ type: 'message', text: `Let's find you the right car. ${first.ask}`, tag: `ask:${first.id}` }),
-      )
-      res.write(sseFrame({ type: 'a2ui', messages: buildQuestionSurface(first) }))
-    }
+  // the user to guess that they should type something first. The greeting is
+  // tagged so a reconnect replaces it rather than stacking a second copy.
+  if (state.phase === 'interview') {
+    res.write(
+      sseFrame({
+        type: 'message',
+        // Short on purpose: the client sets the newest interview line in display
+        // type, and a paragraph at that size fills the screen before the form
+        // it is introducing. The sheet's own lead carries the instructions.
+        text: "Let's find you the right car.",
+        tag: 'greeting',
+      }),
+    )
+    res.write(sseFrame({ type: 'a2ui', messages: buildInterviewFormSurface(state) }))
   }
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 15_000)
 

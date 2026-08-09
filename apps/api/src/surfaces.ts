@@ -1,8 +1,6 @@
 import { CURRENCY_SYMBOL, type RankedListing, type SessionState, isRental, money } from '@car/shared'
 import {
-  type A2uiComponent,
   type A2uiMessage,
-  BASIC_CATALOG,
   CAR_CATALOG,
   SURFACES,
   column,
@@ -12,7 +10,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
-import { type Question, specSheet } from './interview.js'
+import { specSheet } from './interview.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -32,11 +30,12 @@ import { type Question, specSheet } from './interview.js'
  */
 export function initSurfaces(): A2uiMessage[] {
   return [
-    // Both the journey sheet and the stage use our merged catalog, so SpecRow,
-    // CarCard and friends resolve on either.
+    // All three use our merged catalog, so SpecRow, CarCard and friends resolve
+    // on any of them. The interview used to be enough with the basic set, back
+    // when it rendered one stock control at a time; it is a SpecRow sheet now.
     createSurface(SURFACES.journey, CAR_CATALOG),
     createSurface(SURFACES.stage, CAR_CATALOG),
-    createSurface(SURFACES.interview, BASIC_CATALOG),
+    createSurface(SURFACES.interview, CAR_CATALOG),
   ]
 }
 
@@ -394,153 +393,79 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
 }
 
 /**
- * The interview question, rendered as an inline control in the chat.
+ * The interview, as one form.
  *
- * This is the hybrid: the agent asks conversationally, but the answer is one tap
- * on the right kind of control rather than a sentence the user has to compose.
- * Free text stays available in the composer throughout and overrides whatever
- * the control holds.
+ * It used to be a wizard: one question on screen, a Continue under it, eleven
+ * times. Every answer cost a tap on the control and a tap on Continue, and the
+ * only way to revise question three was to walk back through the four after it
+ * — which is why "back" had to exist at all.
+ *
+ * Everything is on screen at once instead. The rows are the same `SpecRow`s the
+ * drawer edits, built from the same `specSheet`, so a value means exactly what
+ * it meant when it was asked one at a time, and the sheet you approve is
+ * literally the sheet you filled. Revising is re-picking a row rather than
+ * navigating, and the whole interview costs one click to submit.
+ *
+ * Mode-dependent rows come out of `specSheet` already resolved — the mileage row
+ * for buying, the return date for renting — so switching rent to buy re-renders
+ * the form with the right questions rather than branching here.
  */
-export function buildQuestionSurface(
-  q: Question,
-  { canGoBack = false }: { canGoBack?: boolean } = {},
-): A2uiMessage[] {
-  const control: A2uiComponent = (() => {
-    switch (q.control) {
-      case 'chips':
-        return {
-          id: 'control',
-          component: 'ChoicePicker',
-          label: '',
-          options: q.options ?? [],
-          value: { path: '/answer' },
-          variant: 'mutuallyExclusive',
-          displayStyle: 'chips',
-        }
-      case 'multi':
-        return {
-          id: 'control',
-          component: 'ChoicePicker',
-          label: '',
-          options: q.options ?? [],
-          value: { path: '/answer' },
-          variant: 'multipleSelection',
-          displayStyle: 'chips',
-        }
-      case 'slider':
-        return {
-          id: 'control',
-          component: 'Slider',
-          label: q.unit ?? '',
-          min: q.min ?? 0,
-          max: q.max ?? 100,
-          value: { path: '/number' },
-        }
-      case 'date':
-        return {
-          id: 'control',
-          component: 'DateTimeInput',
-          label: '',
-          value: { path: '/date' },
-          enableDate: true,
-          enableTime: false,
-        }
-      case 'text':
-        return {
-          id: 'control',
-          component: 'TextField',
-          label: '',
-          value: { path: '/text' },
-          variant: 'shortText',
-        }
-    }
-  })()
-
-  // Which data-model path the answer lands in depends on the control, so the
-  // submit action reads the matching one rather than a single shared field.
-  const answerPath =
-    q.control === 'slider' ? '/number' : q.control === 'date' ? '/date' : q.control === 'text' ? '/text' : '/answer'
-
+export function interviewFormData(state: SessionState): A2uiMessage[] {
+  const buying = state.preferences.mode === 'buy'
   return [
     updateDataModel(SURFACES.interview, '/', {
-      question: q.ask,
-      answer: [],
-      number: q.min ?? 0,
-      date: '',
-      text: '',
+      rows: specSheet(state.preferences, state.criteria),
+      searchLabel: buying ? 'Search cars for sale' : 'Search rentals',
     }),
-    updateComponents(SURFACES.interview, [
-      // No question text here — the agent already asked it in the chat above.
-      // Repeating it inside the control reads as a form, which is the opposite
-      // of what this is meant to feel like.
-      column('root', canGoBack ? ['control', 'submit', 'back'] : ['control', 'submit']),
-      control,
-      {
-        id: 'submit',
-        component: 'Button',
-        child: 'submitLabel',
-        variant: 'primary',
-        action: {
-          event: {
-            name: 'answerQuestion',
-            context: { questionId: q.id, value: { path: answerPath } },
-          },
-        },
-      },
-      text('submitLabel', q.optional ? 'Continue (or skip)' : 'Continue'),
-      // Below the submit and borderless: going back is an escape hatch, not a
-      // rival to answering, so it must not read as one. Absent on the first
-      // question — there is nothing behind it to return to.
-      ...(canGoBack
-        ? [
-            {
-              id: 'back',
-              component: 'Button',
-              child: 'backLabel',
-              variant: 'borderless',
-              action: { event: { name: 'backQuestion', context: {} } },
-            },
-            text('backLabel', '← Back'),
-          ]
-        : []),
-    ]),
   ]
 }
 
-/** The assembled spec, shown for approval before any searching happens. */
-export function buildSpecSurface(
-  lines: string[],
-  { canGoBack = false }: { canGoBack?: boolean } = {},
-): A2uiMessage[] {
+/**
+ * The form's components plus its first data load.
+ *
+ * Split from `interviewFormData` because an edit only ever changes values: the
+ * component tree is a fixed template, and re-sending it on every keystroke
+ * remounts the inputs and steals focus mid-answer.
+ */
+export function buildInterviewFormSurface(state: SessionState): A2uiMessage[] {
   return [
-    updateDataModel(SURFACES.interview, '/', { lines }),
+    ...interviewFormData(state),
     updateComponents(SURFACES.interview, [
-      column('root', canGoBack ? ['title', 'list', 'confirm', 'back'] : ['title', 'list', 'confirm']),
-      text('title', "Here's what I'll search on", 'h5'),
-      { id: 'list', component: 'Column', children: { componentId: 'line', path: '/lines' } },
-      { id: 'line', component: 'Text', text: { path: '' }, variant: 'caption' },
+      column('root', ['lead', 'sheet', 'search', 'note']),
+      text('lead', 'Fill in what matters and leave the rest — every line is optional.', 'caption'),
+      { id: 'sheet', component: 'Column', children: { componentId: 'formRow', path: '/rows' } },
       {
-        id: 'confirm',
+        id: 'formRow',
+        component: 'SpecRow',
+        label: { path: 'label' },
+        value: { path: 'value' },
+        filled: { path: 'filled' },
+        questionId: { path: 'questionId' },
+        control: { path: 'control' },
+        options: { path: 'options' },
+        editValue: { path: 'editValue' },
+        min: { path: 'min' },
+        max: { path: 'max' },
+        step: { path: 'step' },
+        unit: { path: 'unit' },
+        // Same contract as the drawer: the row writes its new value into the
+        // model first, and the action reads it back at dispatch time.
+        action: {
+          event: {
+            name: 'editSpec',
+            context: { questionId: { path: 'questionId' }, value: { path: 'editValue' } },
+          },
+        },
+      },
+      {
+        id: 'search',
         component: 'Button',
-        child: 'confirmLabel',
+        child: 'searchLabel',
         variant: 'primary',
         action: { event: { name: 'confirmSpec', context: {} } },
       },
-      text('confirmLabel', 'Search on this'),
-      // The confirmation is still part of the interview, so it keeps the same
-      // way back: one step, into the last question asked.
-      ...(canGoBack
-        ? [
-            {
-              id: 'back',
-              component: 'Button',
-              child: 'backLabel',
-              variant: 'borderless',
-              action: { event: { name: 'backQuestion', context: {} } },
-            },
-            text('backLabel', '← Back'),
-          ]
-        : []),
+      text('searchLabel', { path: '/searchLabel' }),
+      text('note', 'You can change any of this after the results come back.', 'caption'),
     ]),
   ]
 }

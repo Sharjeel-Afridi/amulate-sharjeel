@@ -8,16 +8,13 @@ import { dealbreakerCriteria } from './interview.js'
 import type { AgentDriver, TurnContext } from './driver.js'
 import {
   type Ranker,
-  advance,
   editSpec,
-  goBackQuestion,
   handleBookingSubmitted,
   handlePaymentConfirmed,
-  recordAnswer,
   runResearch,
   showCarDetail,
+  showInterviewForm,
   showResults,
-  showSpec,
   startBooking,
 } from './journey.js'
 import { withRateLimitRetry, withTimeout } from './llm.js'
@@ -252,14 +249,13 @@ function buildTools(ctx: TurnContext, ranker: Ranker) {
   const showSpecTool = tool({
     name: 'show_spec',
     description:
-      'Assemble the spec from everything gathered and show it for confirmation. Use this ' +
-      'only if the user asks to cut the questions short — otherwise the interview reaches ' +
-      'it on its own. Do not search until the user confirms.',
+      'Repaint the interview form so it reflects everything recorded so far. Call this ' +
+      'after recording preferences, so the user sees their answers land. The form is ' +
+      'always on screen — do not search until the user asks you to.',
     parameters: NO_ARGS,
     execute: async () => {
-      ctx.patchInterview({ complete: true })
-      showSpec(ctx)
-      return 'Spec shown. Wait for the user to confirm before searching.'
+      showInterviewForm(ctx)
+      return 'Form updated. Wait for the user to ask before searching.'
     },
   })
 
@@ -375,14 +371,6 @@ export class LlmAgentDriver implements AgentDriver {
     name: string,
     context: Record<string, unknown>,
   ): Promise<void> {
-    if (name === 'answerQuestion') {
-      recordAnswer(ctx, String(context.questionId ?? ''), context.value)
-      advance(ctx)
-      return
-    }
-
-    if (name === 'backQuestion') return goBackQuestion(ctx)
-
     // Editing the spec sheet. Deterministic like every other control: the value
     // came from a control the question plan constrained, so there is nothing for
     // a model to resolve.

@@ -5,26 +5,21 @@ import {
   type Preferences,
   type RankedListing,
   assess,
-  missingFields,
   money,
   screen,
 } from '@car/shared'
 import {
   buildCarDetailSurface,
   buildCatalogueSurface,
+  buildInterviewFormSurface,
   buildJourneySurface,
-  buildQuestionSurface,
   buildSearchingSurface,
-  buildSpecSurface,
+  interviewFormData,
 } from './surfaces.js'
 import {
   answerToPreferences,
   dealbreakerCriteria,
-  describeSpecFull,
-  nextQuestion,
   questionById,
-  questionPreferenceKeys,
-  questionsRemaining,
   requirementCriteria,
 } from './interview.js'
 import { callToolForApp, callToolJson } from './mcp.js'
@@ -48,16 +43,6 @@ import { rank } from './ranking.js'
  * Both drivers share this. The scripted one adds regex extraction for typed
  * text; the model-backed one adds an agent turn. The journey itself is the same.
  */
-
-/** Records one answered question and closes it out. */
-export function recordAnswer(ctx: TurnContext, questionId: string, raw: unknown): void {
-  applyAnswer(ctx, questionId, raw)
-
-  ctx.patchInterview({
-    answered: [...ctx.state.interview.answered, questionId],
-    pending: undefined,
-  })
-}
 
 /**
  * Writes one answer into preferences and criteria.
@@ -120,6 +105,11 @@ export function editSpec(ctx: TurnContext, questionId: string, raw: unknown): vo
   rebuildCriteria(ctx)
   ctx.patchInterview({ dirty: true })
   ctx.a2ui(buildJourneySurface(ctx.state))
+
+  // The form and the drawer are two views of one sheet, so an edit in either has
+  // to reach both. Values only — re-sending the components would remount the
+  // inputs and take the caret with them.
+  if (ctx.state.phase === 'interview') ctx.a2ui(interviewFormData(ctx.state))
 }
 
 /**
@@ -144,98 +134,18 @@ function rebuildCriteria(ctx: TurnContext): void {
   ])
 }
 
-/** Ask the next question, or close the interview and present the spec. */
-export function advance(ctx: TurnContext): void {
-  const answered = new Set(ctx.state.interview.answered)
-  const question = nextQuestion(ctx.state.preferences, answered)
-
-  ctx.a2ui(buildJourneySurface(ctx.state))
-
-  if (question) {
-    const left = questionsRemaining(ctx.state.preferences, answered)
-    ctx.patchInterview({ pending: question.id })
-    // Tagged with the question's identity: if this ask has appeared before —
-    // the user came back to it — the client rewinds the thread to that point,
-    // so the questions walked past on the way stop reading as answered.
-    ctx.say(question.ask, `ask:${question.id}`)
-    ctx.a2ui(buildQuestionSurface(question, { canGoBack: ctx.state.interview.answered.length > 0 }))
-    if (left > 1) ctx.step(`${left - 1} more to go`)
-    return
-  }
-
-  ctx.patchInterview({ complete: true })
-  showSpec(ctx)
-}
-
 /**
- * Steps the interview back to the previous question.
+ * Puts the whole interview on screen.
  *
- * Undo works by erasure rather than a history stack: popping the question from
- * `answered` and clearing the field it wrote makes `isPending` true again, so
- * `advance` re-asks the same question with a fresh control — one mechanism for
- * forward and back, nothing new to drift.
- *
- * Going back also reopens the interview (`complete` and `confirmed` off),
- * because a changed answer invalidates any spec already shown. Popping `mode`
- * can leave later mode-gated answers lingering; clearing just the popped
- * question is the contract, and the spec sheet keeps the rest editable.
+ * There is no next question to choose any more — every row is already visible,
+ * so this just rebuilds the sheet from current state. Both the drawer and the
+ * form render from the same `specSheet`, which is why answering by typing and
+ * answering by picking end up in exactly the same place.
  */
-export function goBackQuestion(ctx: TurnContext): void {
-  const answered = ctx.state.interview.answered
-  const last = answered[answered.length - 1]
-  if (!last) {
-    ctx.say("We're already at the first question.")
-    return
-  }
-
-  ctx.patchInterview({
-    answered: answered.slice(0, -1),
-    pending: undefined,
-    complete: false,
-    confirmed: false,
-  })
-
-  const wrote = questionPreferenceKeys(last)
-  if (wrote.length > 0) ctx.clearPreferences(wrote)
-
-  if (last === 'dealbreakers') {
-    // Dealbreakers wrote exclusions rather than a preference field, so undoing
-    // them means dropping the exclusions — and the strict-budget marker, which
-    // rides in notes because it shapes how the budget criterion is built.
-    ctx.setCriteria(ctx.state.criteria.filter((c) => c.kind !== 'exclusion'))
-    ctx.patchPreferences({
-      notes: (ctx.state.preferences.notes ?? []).filter((n) => n !== 'strict-budget'),
-    })
-  }
-
-  // No "went back" step: the re-asked question carries its own tag, and the
-  // client rewinds the transcript to its first asking — a step emitted here
-  // would land inside the span being removed and flash for one frame.
-  advance(ctx)
-}
-
-/**
- * The gate: nothing is searched until the user approves this.
- *
- * Gaps are reported rather than re-asked. "Not sure — help me choose" is a valid
- * answer to the category question that deliberately sets no category, so looping
- * until every required field is filled would never terminate. The spec on screen
- * is the real safety net: a missing line is visible, and the user can correct it
- * before anything is searched.
- */
-export function showSpec(ctx: TurnContext): void {
+export function showInterviewForm(ctx: TurnContext): void {
   rebuildCriteria(ctx)
-  const criteria = ctx.state.criteria
-
-  const gaps = missingFields(ctx.state.preferences)
-  if (gaps.length > 0) ctx.step('Spec has gaps', `no ${gaps.join(', ')} — searching without ${gaps.length === 1 ? 'it' : 'them'}`)
-
-  ctx.say("That's everything I need. Here's the spec I'll search on — change anything before I start.")
-  ctx.a2ui(
-    buildSpecSurface(describeSpecFull(ctx.state.preferences, criteria), {
-      canGoBack: ctx.state.interview.answered.length > 0,
-    }),
-  )
+  ctx.a2ui(buildJourneySurface(ctx.state))
+  ctx.a2ui(buildInterviewFormSurface(ctx.state))
 }
 
 export interface ResearchSummary {

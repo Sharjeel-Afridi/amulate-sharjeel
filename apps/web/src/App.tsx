@@ -219,7 +219,10 @@ function Conversation({
   // Scrolling has to survive the iframes, which report their height after they
   // have mounted and again on every step change. Watching content size rather
   // than the message count is the only thing that keeps up with them.
-  const scrollerRef = useStickyScroll<HTMLDivElement>()
+  //
+  // Off during the interview: that phase is a single tall form, and following
+  // the bottom of it opens on the last row instead of the first question.
+  const scrollerRef = useStickyScroll<HTMLDivElement>(phase !== 'interview')
 
   // Only the newest MCP App stays interactive. A superseded one — a booking form
   // whose payment screen has already opened — collapses to a receipt line, so

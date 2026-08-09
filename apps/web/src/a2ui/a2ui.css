@@ -831,13 +831,60 @@
 }
 
 /* ==========================================================================
-   Interview controls, scaled to the centred form.
+   The interview form.
    ==========================================================================
-   The question is now display type, so chips at 12px and a grey Continue read
-   as a footnote to it. The library's variant classes are lost to the empty
-   class maps, so the submit button is identified structurally: it is the only
-   button on the interview surface that is not a chip.
+   Every question is on screen at once as a sheet of SpecRows, so the sizing
+   here is about making eleven rows scannable rather than making one control
+   monumental. The Search button is identified structurally — it is the only
+   button on the surface that is neither a chip nor a row's own disclosure.
 */
+
+/* Rows get more height than the drawer's, because this is the thing being
+   filled in rather than a reference being corrected. */
+.interview .a2ui-host .a2ui-specrow { padding: 13px 2px; }
+.interview .a2ui-host .a2ui-specrow__label { font-size: 13px; }
+.interview .a2ui-host .a2ui-specrow .a2ui-specrow__select,
+.interview .a2ui-host .a2ui-specrow .a2ui-specrow__input,
+.interview .a2ui-host .a2ui-specrow .a2ui-specrow__disclose { font-size: 14px; }
+
+/* A hairline field on every editable row. At rest the sheet still reads as
+   answers rather than as a form, but there is never any doubt about what is
+   clickable — which mattered less when one control owned the screen. */
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__select,
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__input,
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__disclose {
+  border-color: rgba(255, 255, 255, 0.09);
+  background-color: rgba(0, 0, 0, 0.22);
+  padding: 6px 10px;
+}
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__select { padding-right: 24px; }
+
+/* One control column. Right-aligning each control to its own content left the
+   sheet with eleven different left edges, which reads as a list of answers
+   rather than as something to fill in. */
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__select,
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__disclose,
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__measure,
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__multi,
+.interview .a2ui-host .a2ui-specrow--editable > .a2ui-specrow__input {
+  flex: none;
+  width: 224px;
+  max-width: 56%;
+}
+/* The budget's unit rides beside its figure inside that same column. */
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__measure .a2ui-specrow__input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.interview .a2ui-host .a2ui-specrow--editable .a2ui-specrow__multi .a2ui-specrow__disclose {
+  width: 100%;
+  max-width: none;
+}
+
+/* The lead-in and the footnote either side of the sheet. */
+.interview .a2ui-host .a2uiText:first-child,
+.interview .a2ui-host > * > :first-child > p { color: var(--faint, #6b7480); }
 
 .interview .a2ui-host .chip {
   font-size: 14.5px;
@@ -861,8 +908,9 @@
   100% { transform: scale(1); }
 }
 
-.interview .a2ui-host button:not(.chip) {
+.interview .a2ui-host button:not(.chip):not(.a2ui-specrow__disclose) {
   width: 100%;
+  margin-top: 6px;
   padding: 13px 20px;
   font-size: 15px;
   font-weight: 650;
@@ -871,7 +919,7 @@
   border-color: var(--accent, #c8ff3d);
   color: var(--accent-ink, #14200a);
 }
-.interview .a2ui-host button:not(.chip):hover {
+.interview .a2ui-host button:not(.chip):not(.a2ui-specrow__disclose):hover {
   filter: brightness(1.08);
   border-color: var(--accent, #c8ff3d);
   background: var(--accent, #c8ff3d);
@@ -880,7 +928,7 @@
 
 /* The interview's escape hatch — "← Back" renders as a quiet text link under
    the primary, never as a second lime button competing with Continue. */
-.interview .a2ui-host button:not(.chip):last-of-type:not(:only-of-type) {
+.interview .a2ui-host button:not(.chip):not(.a2ui-specrow__disclose):last-of-type:not(:only-of-type) {
   width: auto;
   margin: 2px auto 0;
   padding: 6px 12px;
@@ -892,16 +940,18 @@
   box-shadow: none;
   animation: none;
 }
-.interview .a2ui-host button:not(.chip):last-of-type:not(:only-of-type):hover {
+.interview .a2ui-host button:not(.chip):not(.a2ui-specrow__disclose):last-of-type:not(:only-of-type):hover {
   color: var(--text, #f4f6f8);
   background: rgba(255, 255, 255, 0.05);
   filter: none;
 }
 
-/* Text, date and number answers get the same presence as the chips. */
-.interview .a2ui-host input[type='text'],
-.interview .a2ui-host input[type='date'],
-.interview .a2ui-host input[type='number'] {
+/* Standalone text, date and number answers get real presence. Scoped away from
+   the sheet's own inputs, which are sized as rows — without the exclusion this
+   selector outweighs them and every row grows a 46px field. */
+.interview .a2ui-host input[type='text']:not(.a2ui-specrow__input),
+.interview .a2ui-host input[type='date']:not(.a2ui-specrow__input),
+.interview .a2ui-host input[type='number']:not(.a2ui-specrow__input) {
   height: 46px;
   font-size: 15px;
   padding: 0 14px;
