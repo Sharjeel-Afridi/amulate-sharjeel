@@ -23,6 +23,7 @@ import {
   describeSpecFull,
   nextQuestion,
   questionById,
+  questionPreferenceKeys,
   questionsRemaining,
   requirementCriteria,
 } from './interview.js'
@@ -154,13 +155,58 @@ export function advance(ctx: TurnContext): void {
     const left = questionsRemaining(ctx.state.preferences, answered)
     ctx.patchInterview({ pending: question.id })
     ctx.say(question.ask)
-    ctx.a2ui(buildQuestionSurface(question))
+    ctx.a2ui(buildQuestionSurface(question, { canGoBack: ctx.state.interview.answered.length > 0 }))
     if (left > 1) ctx.step(`${left - 1} more to go`)
     return
   }
 
   ctx.patchInterview({ complete: true })
   showSpec(ctx)
+}
+
+/**
+ * Steps the interview back to the previous question.
+ *
+ * Undo works by erasure rather than a history stack: popping the question from
+ * `answered` and clearing the field it wrote makes `isPending` true again, so
+ * `advance` re-asks the same question with a fresh control — one mechanism for
+ * forward and back, nothing new to drift.
+ *
+ * Going back also reopens the interview (`complete` and `confirmed` off),
+ * because a changed answer invalidates any spec already shown. Popping `mode`
+ * can leave later mode-gated answers lingering; clearing just the popped
+ * question is the contract, and the spec sheet keeps the rest editable.
+ */
+export function goBackQuestion(ctx: TurnContext): void {
+  const answered = ctx.state.interview.answered
+  const last = answered[answered.length - 1]
+  if (!last) {
+    ctx.say("We're already at the first question.")
+    return
+  }
+
+  ctx.patchInterview({
+    answered: answered.slice(0, -1),
+    pending: undefined,
+    complete: false,
+    confirmed: false,
+  })
+
+  const wrote = questionPreferenceKeys(last)
+  if (wrote.length > 0) ctx.clearPreferences(wrote)
+
+  if (last === 'dealbreakers') {
+    // Dealbreakers wrote exclusions rather than a preference field, so undoing
+    // them means dropping the exclusions — and the strict-budget marker, which
+    // rides in notes because it shapes how the budget criterion is built.
+    ctx.setCriteria(ctx.state.criteria.filter((c) => c.kind !== 'exclusion'))
+    ctx.patchPreferences({
+      notes: (ctx.state.preferences.notes ?? []).filter((n) => n !== 'strict-budget'),
+    })
+  }
+
+  ctx.step('Went back a question')
+  advance(ctx)
 }
 
 /**
@@ -180,7 +226,11 @@ export function showSpec(ctx: TurnContext): void {
   if (gaps.length > 0) ctx.step('Spec has gaps', `no ${gaps.join(', ')} — searching without ${gaps.length === 1 ? 'it' : 'them'}`)
 
   ctx.say("That's everything I need. Here's the spec I'll search on — change anything before I start.")
-  ctx.a2ui(buildSpecSurface(describeSpecFull(ctx.state.preferences, criteria)))
+  ctx.a2ui(
+    buildSpecSurface(describeSpecFull(ctx.state.preferences, criteria), {
+      canGoBack: ctx.state.interview.answered.length > 0,
+    }),
+  )
 }
 
 export interface ResearchSummary {
@@ -442,6 +492,10 @@ export function showCarDetail(ctx: TurnContext, listingId: string): boolean {
 
 /** Returns the stage to the ranked list. */
 export function showResults(ctx: TurnContext): void {
+  // Backing out of the booking form is a return to browsing, so the phase moves
+  // with the stage — but only from 'book'. 'done' means the (mock) payment
+  // settled, and a settled booking is final.
+  if (ctx.state.phase === 'book') ctx.setPhase('recommend')
   ctx.a2ui(buildCatalogueSurface(ctx.state.shortlist))
 }
 

@@ -10,6 +10,7 @@ import {
   type Ranker,
   advance,
   editSpec,
+  goBackQuestion,
   handleBookingSubmitted,
   handlePaymentConfirmed,
   recordAnswer,
@@ -379,6 +380,8 @@ export class LlmAgentDriver implements AgentDriver {
       advance(ctx)
       return
     }
+
+    if (name === 'backQuestion') return goBackQuestion(ctx)
 
     // Editing the spec sheet. Deterministic like every other control: the value
     // came from a control the question plan constrained, so there is nothing for

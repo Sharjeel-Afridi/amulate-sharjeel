@@ -401,7 +401,10 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
  * Free text stays available in the composer throughout and overrides whatever
  * the control holds.
  */
-export function buildQuestionSurface(q: Question): A2uiMessage[] {
+export function buildQuestionSurface(
+  q: Question,
+  { canGoBack = false }: { canGoBack?: boolean } = {},
+): A2uiMessage[] {
   const control: A2uiComponent = (() => {
     switch (q.control) {
       case 'chips':
@@ -470,7 +473,7 @@ export function buildQuestionSurface(q: Question): A2uiMessage[] {
       // No question text here — the agent already asked it in the chat above.
       // Repeating it inside the control reads as a form, which is the opposite
       // of what this is meant to feel like.
-      column('root', ['control', 'submit']),
+      column('root', canGoBack ? ['control', 'submit', 'back'] : ['control', 'submit']),
       control,
       {
         id: 'submit',
@@ -485,16 +488,34 @@ export function buildQuestionSurface(q: Question): A2uiMessage[] {
         },
       },
       text('submitLabel', q.optional ? 'Continue (or skip)' : 'Continue'),
+      // Below the submit and borderless: going back is an escape hatch, not a
+      // rival to answering, so it must not read as one. Absent on the first
+      // question — there is nothing behind it to return to.
+      ...(canGoBack
+        ? [
+            {
+              id: 'back',
+              component: 'Button',
+              child: 'backLabel',
+              variant: 'borderless',
+              action: { event: { name: 'backQuestion', context: {} } },
+            },
+            text('backLabel', '← Back'),
+          ]
+        : []),
     ]),
   ]
 }
 
 /** The assembled spec, shown for approval before any searching happens. */
-export function buildSpecSurface(lines: string[]): A2uiMessage[] {
+export function buildSpecSurface(
+  lines: string[],
+  { canGoBack = false }: { canGoBack?: boolean } = {},
+): A2uiMessage[] {
   return [
     updateDataModel(SURFACES.interview, '/', { lines }),
     updateComponents(SURFACES.interview, [
-      column('root', ['title', 'list', 'confirm']),
+      column('root', canGoBack ? ['title', 'list', 'confirm', 'back'] : ['title', 'list', 'confirm']),
       text('title', "Here's what I'll search on", 'h5'),
       { id: 'list', component: 'Column', children: { componentId: 'line', path: '/lines' } },
       { id: 'line', component: 'Text', text: { path: '' }, variant: 'caption' },
@@ -506,6 +527,20 @@ export function buildSpecSurface(lines: string[]): A2uiMessage[] {
         action: { event: { name: 'confirmSpec', context: {} } },
       },
       text('confirmLabel', 'Search on this'),
+      // The confirmation is still part of the interview, so it keeps the same
+      // way back: one step, into the last question asked.
+      ...(canGoBack
+        ? [
+            {
+              id: 'back',
+              component: 'Button',
+              child: 'backLabel',
+              variant: 'borderless',
+              action: { event: { name: 'backQuestion', context: {} } },
+            },
+            text('backLabel', '← Back'),
+          ]
+        : []),
     ]),
   ]
 }

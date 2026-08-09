@@ -3,6 +3,7 @@ import type { AgentDriver, TurnContext } from './driver.js'
 import {
   advance,
   editSpec,
+  goBackQuestion,
   handleBookingSubmitted,
   handlePaymentConfirmed,
   recordAnswer,
@@ -91,6 +92,8 @@ export class ScriptedDriver implements AgentDriver {
       advance(ctx)
       return
     }
+
+    if (name === 'backQuestion') return goBackQuestion(ctx)
 
     // Editing the spec sheet. No search — the user may be changing several
     // things, and `searchAgain` is how they say they are done.

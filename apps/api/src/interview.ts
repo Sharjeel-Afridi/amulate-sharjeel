@@ -209,6 +209,19 @@ function topicField(q: Question): keyof Preferences | undefined {
   return q.topic === 'dealbreakers' ? undefined : (q.topic as keyof Preferences)
 }
 
+/**
+ * The preference keys one answered question wrote — the undo counterpart of
+ * `answerToPreferences`. Derived from the question's topic rather than kept as a
+ * second switch, so going back can never clear a different field than answering
+ * set. Dealbreakers wrote criteria rather than a field, so they come back empty
+ * and the caller strips the exclusions itself.
+ */
+export function questionPreferenceKeys(questionId: string): (keyof Preferences)[] {
+  const q = questionById(questionId)
+  const field = q ? topicField(q) : undefined
+  return field ? [field] : []
+}
+
 /** Whether a question is still worth putting to the user. */
 function isPending(q: Question, prefs: Preferences, answered: Set<string>): boolean {
   if (answered.has(q.id)) return false
