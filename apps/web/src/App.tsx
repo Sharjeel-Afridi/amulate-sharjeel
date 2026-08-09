@@ -198,6 +198,7 @@ function Conversation({
   onAction,
   onCallTool,
   onError,
+  onBack,
 }: {
   items: ChatItem[]
   busy: boolean
@@ -209,6 +210,8 @@ function Conversation({
   onAction: (action: A2uiClientAction) => void
   onCallTool: (name: string, args: Record<string, unknown>) => Promise<unknown>
   onError: (e: unknown) => void
+  /** The way back out of this view, when there is somewhere to go back to. */
+  onBack?: () => void
 }) {
   const [draft, setDraft] = useState('')
 
@@ -251,6 +254,11 @@ function Conversation({
     <section className="panel panel--chat" aria-label="Conversation">
       <div className="panel__body" ref={scrollerRef}>
         <div className="chat">
+          {onBack && (
+            <button type="button" className="backlink" onClick={onBack}>
+              ← Back to matches
+            </button>
+          )}
           {items.map((item) => {
             switch (item.kind) {
               case 'agent':
@@ -306,6 +314,7 @@ function Conversation({
           {busy && (
             <div className="typing" aria-label="The concierge is typing">
               <span /><span /><span />
+              <span className="typing__label">thinking</span>
             </div>
           )}
         </div>
@@ -497,6 +506,17 @@ export function App() {
   const { state, items, a2ui, busy, agent, send, sendAction, callTool, setMode } = useSession()
   const [renderErrors, setRenderErrors] = useState<string[]>([])
 
+  // What the agent is doing right now — the label of its newest step, shown in
+  // the top bar while a turn is running so the work is visible even when the
+  // step lines have scrolled away.
+  const lastStep = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      if (item?.kind === 'step') return item.label
+    }
+    return undefined
+  }, [items])
+
   // Three states, not two: the intro stays mounted through `handover` so the
   // car pulling away and the cockpit arriving are one crossfade rather than a
   // cut. The cockpit renders from the first frame either way — it opens the
@@ -559,6 +579,12 @@ export function App() {
             </div>
             <Stepper phase={phase} />
             <div className="topbar__right">
+              {busy && (
+                <div className="agentpulse" role="status" aria-label="Agent is working">
+                  <span className="agentpulse__bars" aria-hidden="true"><i /><i /><i /></span>
+                  <span className="agentpulse__label">{lastStep ?? 'Working on it…'}</span>
+                </div>
+              )}
               <ModeToggle
                 mode={mode}
                 agentAvailable={agent.available}
@@ -576,6 +602,8 @@ export function App() {
               </button>
             </div>
           </header>
+
+          <div className={`workline${busy ? ' workline--on' : ''}`} aria-hidden="true" />
 
           {mode === 'scripted' && (
             <div className="guidebar" role="status">
@@ -603,6 +631,10 @@ export function App() {
                 onAction={onAction}
                 onCallTool={callTool}
                 onError={onError}
+                // Booking is a decision still being made, so the results stay
+                // one tap away until payment settles. `done` is final — there
+                // is nothing meaningful to go back to.
+                onBack={phase === 'book' ? () => sendAction('backToResults', {}) : undefined}
               />
             )}
           </div>
