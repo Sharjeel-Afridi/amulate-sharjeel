@@ -436,6 +436,39 @@
   cursor: pointer;
 }
 
+/* Markdown body, rendered by @a2ui/markdown-it via MarkdownContext in A2uiHost.
+   The library's own .a2uiText rules — which zero these margins — are lost to the
+   same empty-class-map bug, so without this the agent's prose arrives with UA
+   defaults: 1em paragraph gaps and a 40px list indent. */
+.a2ui-host :is(p, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6) { margin: 0; }
+.a2ui-host :is(p, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6) + * { margin-top: 0.6em; }
+.a2ui-host :is(ul, ol) { padding-left: 1.15em; }
+.a2ui-host li + li { margin-top: 3px; }
+.a2ui-host li::marker { color: var(--faint, #626b75); }
+
+.a2ui-host blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--line, rgba(255, 255, 255, 0.12));
+  color: var(--muted, #98a1ab);
+}
+
+.a2ui-host a { color: var(--accent, #c8ff3d); text-underline-offset: 2px; }
+
+.a2ui-host code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.a2ui-host pre {
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.32);
+}
+.a2ui-host pre code { padding: 0; background: none; }
+
 .a2ui-host input[type='range'] { accent-color: var(--accent, #c8ff3d); width: 100%; }
 .a2ui-host input[type='text'],
 .a2ui-host input[type='date'],

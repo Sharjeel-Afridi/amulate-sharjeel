@@ -1,4 +1,10 @@
-import { A2uiSurface, basicCatalog, type ReactComponentImplementation } from '@a2ui/react/v0_9'
+import { renderMarkdown } from '@a2ui/markdown-it'
+import {
+  A2uiSurface,
+  basicCatalog,
+  MarkdownContext,
+  type ReactComponentImplementation,
+} from '@a2ui/react/v0_9'
 import {
   MessageProcessor,
   type A2uiClientAction,
@@ -164,16 +170,23 @@ export function A2uiHost({
 
   const visible = surfaceId ? surfaces.filter((s) => s.id === surfaceId) : surfaces
 
+  // Text renders through the basic catalog's markdown path, which is a no-op
+  // until a renderer is supplied on this context — the agent's bold, lists and
+  // links would otherwise reach the user as literal asterisks. renderMarkdown
+  // runs the output through DOMPurify, which matters here: the text is model
+  // output relayed from the API.
   return (
-    <div className={className ? `a2ui-host ${className}` : 'a2ui-host'}>
-      {visible.length === 0
-        ? children
-        : visible.map((surface) => (
-            <div key={surface.id} className="a2ui-host__surface" data-surface-id={surface.id}>
-              <A2uiSurface surface={surface} />
-            </div>
-          ))}
-    </div>
+    <MarkdownContext.Provider value={renderMarkdown}>
+      <div className={className ? `a2ui-host ${className}` : 'a2ui-host'}>
+        {visible.length === 0
+          ? children
+          : visible.map((surface) => (
+              <div key={surface.id} className="a2ui-host__surface" data-surface-id={surface.id}>
+                <A2uiSurface surface={surface} />
+              </div>
+            ))}
+      </div>
+    </MarkdownContext.Provider>
   )
 }
 
