@@ -72,7 +72,7 @@ That split is why a free-tier model is sufficient.
 
 | | |
 |---|---|
-| 400 listings, 10 categories × 10 brands × rent+buy, seeded | ✅ |
+| 45 real scraped Sixt offers → 90 listings, 7 categories, 10 brands, rent+buy | ⚠️ below the brief's mock-marketplace floor — see below |
 | Search with progressive constraint relaxation | ✅ |
 | Generated SVG car art (bezier, gradients, alloys, curated palette) | ✅ |
 | MCP server, 7 tools, streamable HTTP | ✅ |
@@ -200,7 +200,7 @@ npm run dev                # all three services
 ## Verification
 
 ```bash
-npm run verify -w @car/catalog          # catalogue floor: 100+ listings, 10 cats, 10 brands
+npm run verify -w @car/catalog          # shape, price sanity, search behaviour (NOT the brief's floor)
 npm run verify -w @car/ranking          # scoring, factor sums, rationale quality
 npm run smoke  -w @car/mcp-marketplace  # connects as a real MCP client
 npm run smoke  -w @car/api              # full journey over SSE

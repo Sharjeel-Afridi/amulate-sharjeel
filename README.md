@@ -154,10 +154,16 @@ deterministic fallback, and every structured surface is built server-side:
 
 ## Marketplace data
 
-No real dealership integrations and no real payments. The bundled marketplace
-holds **400 listings** — 10 categories × 10 brands × both rent and buy —
-generated deterministically from a fixed seed, so every run and every reviewer
-sees identical data.
+No real dealership integrations and no real payments. The bundled marketplace is
+a snapshot of **45 real scraped offers** from sixt.com — real models, real day
+rates, real photographs — each exposed as both a rental and a purchase, giving
+**90 listings across 7 categories and 10 brands**. It is served from a fixed
+JSON file, so every run and every reviewer sees identical data.
+
+A generated catalogue is not used any more. Loading real inventory is what makes
+the rationales worth reading: "a 2023 BMW 3 Series Touring, 520 L boot" is a
+claim about a car that exists. The trade-off is breadth — see
+`packages/catalog/src/cars.source.json` for the raw scrape.
 
 Checkout is **entirely mocked**. Card fields are `readonly` with the universal
 test number baked in, so a real card cannot be entered. Nothing is processed,
