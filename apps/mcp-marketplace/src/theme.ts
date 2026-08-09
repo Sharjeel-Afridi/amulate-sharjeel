@@ -6,15 +6,20 @@
  */
 export const THEME_CSS = `
 :root {
-  --bg: #0b0c0e;
-  --surface: rgba(255,255,255,0.045);
-  --surface-2: rgba(255,255,255,0.07);
-  --border: rgba(255,255,255,0.10);
-  --border-strong: rgba(255,255,255,0.18);
-  --text: #f2f4f7;
-  --muted: #98a1ab;
+  --bg: #15181d;
+  --surface: rgba(255,255,255,0.035);
+  --surface-2: rgba(255,255,255,0.06);
+  --surface-3: #1d2127;
+  --sunken: rgba(0,0,0,0.3);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+  --text: #f4f6f8;
+  --muted: #99a2ad;
+  --faint: #6b7480;
   --accent: #c8ff3d;
-  --accent-ink: #16200a;
+  --accent-ink: #14200a;
+  --accent-dim: rgba(200,255,61,0.4);
+  --success: #6ee7a8;
   --danger: #ff6b6b;
   --radius: 10px;
 }
@@ -36,6 +41,160 @@ html, body {
   border-radius: 14px;
   padding: 16px;
 }
+
+/* ======================================================================
+   The booking journey.
+   ======================================================================
+   One widget, four steps, one on screen at a time. Everything a person has
+   to decide about a car is here — dates, cover, who is driving, paying — and
+   showing all of it at once is what made a €500 transaction read as a form
+   dump. Each step replaces the last, and every step after the first can be
+   walked back.
+*/
+
+.app { display: flex; flex-direction: column; }
+
+/* Which car this is about. Present on every step, so nobody has to scroll
+   back to check they are booking the one they picked. */
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.summary__art { width: 84px; height: 54px; flex: none; }
+.summary__art img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.summary__body { min-width: 0; flex: 1; }
+.summary__name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.summary__meta {
+  font-size: 11.5px; color: var(--faint);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.summary__rate { margin-left: auto; text-align: right; flex: none; }
+.summary__rate b { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+.summary__rate span { display: block; font-size: 11px; color: var(--faint); }
+
+/* ------------------------------------------------------------- progress */
+
+.steps { display: flex; align-items: center; gap: 0; margin: 18px 0 16px; }
+.steps__item {
+  display: flex; align-items: center; gap: 7px;
+  flex: none;
+  background: none; border: 0; padding: 0;
+  font: inherit; color: var(--faint);
+  cursor: default;
+}
+.steps__item[data-done="1"] { cursor: pointer; }
+.steps__num {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--border-strong);
+  font-size: 10px; font-weight: 700;
+  color: var(--faint);
+  transition: background .18s, border-color .18s, color .18s;
+}
+.steps__label { font-size: 12px; white-space: nowrap; }
+.steps__item[data-done="1"] .steps__num {
+  background: var(--success); border-color: var(--success); color: #0d1a12;
+}
+.steps__item[data-done="1"] .steps__label { color: var(--muted); }
+.steps__item[data-active="1"] .steps__num {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+}
+.steps__item[data-active="1"] .steps__label { color: var(--text); font-weight: 600; }
+.steps__rule { flex: 1; height: 1px; background: var(--border-strong); margin: 0 8px; min-width: 8px; }
+
+/* ---------------------------------------------------------------- steps */
+
+.step { display: none; }
+.step[data-current="1"] { display: block; animation: step-in .22s cubic-bezier(.2,.7,.3,1); }
+@keyframes step-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+
+.step__title { font-size: 15px; font-weight: 600; margin: 0 0 3px; letter-spacing: -0.01em; }
+.step__lede { font-size: 12.5px; color: var(--muted); margin: 0 0 16px; }
+
+/* ---------------------------------------------------------------- fields */
+
+.field { margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field__label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+.field__hint { font-size: 11.5px; color: var(--faint); margin-top: 5px; }
+.field__error { font-size: 11.5px; color: var(--danger); margin-top: 5px; min-height: 0; }
+.field--bad input { border-color: var(--danger); }
+
+.readonly {
+  display: flex; align-items: center; gap: 8px;
+  height: 42px; padding: 0 12px;
+  background: var(--sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- extras */
+
+.option {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.option + .option { margin-top: 8px; }
+.option:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.option:has(input:checked) { border-color: var(--accent-dim); background: rgba(200,255,61,0.05); }
+.option input { accent-color: var(--accent); width: 16px; height: 16px; margin: 2px 0 0; flex: none; }
+/* The children are spans, so they need to be told to stack — an inline note
+   trailing its own label reads as one run-on sentence. */
+.option__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.option__name { display: block; font-size: 13.5px; font-weight: 500; }
+.option__note { display: block; font-size: 11.5px; color: var(--faint); line-height: 1.4; }
+.option__price { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.option__price small { color: var(--faint); font-weight: 400; }
+
+/* --------------------------------------------------------------- summary */
+
+.lines { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+.lines .line { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.lines .line span:first-child { color: var(--muted); }
+.lines .line span:last-child { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ action bar */
+
+.bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.bar__total { margin-right: auto; }
+.bar__total span { display: block; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.bar__total b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+.btn {
+  height: 42px; padding: 0 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font: 600 13.5px/1 inherit;
+  cursor: pointer;
+  transition: filter .15s, transform .08s, background .15s, border-color .15s;
+}
+.btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.btn:active:not(:disabled) { transform: scale(.985); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.btn--back { padding: 0 14px; border-color: transparent; color: var(--muted); }
+.btn--back:hover:not(:disabled) { color: var(--text); }
+
+.note { font-size: 11.5px; color: var(--faint); text-align: center; margin-top: 10px; }
 .row { display: flex; gap: 12px; align-items: center; }
 .between { display: flex; justify-content: space-between; align-items: center; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -50,11 +209,11 @@ h2 { font-size: 13px; font-weight: 600; margin: 0; }
   color: var(--muted);
   margin-bottom: 5px;
 }
-input[type="text"], input[type="email"], input[type="date"], select {
+input[type="text"], input[type="email"], input[type="tel"], input[type="date"], select {
   width: 100%;
-  height: 38px;
-  padding: 0 11px;
-  background: rgba(0,0,0,0.28);
+  height: 42px;
+  padding: 0 12px;
+  background: var(--sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text);
@@ -182,8 +341,15 @@ export const BRIDGE_JS = `
   }
 
   function reportSize() {
-    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
-    if (h === lastHeight) return;
+    // Measure the body, not the document element. The root box is sized against
+    // the iframe's own viewport, which the host has just set from our last
+    // report — so a widget that gets shorter keeps re-reporting the taller
+    // number and can only ever grow. That is invisible on a single-page widget
+    // and very visible on one with steps, which leaves a screen of dead space
+    // below itself the moment a short step follows a tall one.
+    var box = document.body || document.documentElement;
+    var h = Math.ceil(box.getBoundingClientRect().height);
+    if (!h || h === lastHeight) return;
     lastHeight = h;
     notify('ui/notifications/size-changed', { height: h });
   }
@@ -250,7 +416,7 @@ export const BRIDGE_JS = `
     notify('ui/notifications/initialized');
     if (result && result.hostContext) applyHostContext(result.hostContext);
     reportSize();
-    if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.documentElement);
+    if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
   }
 
   request('ui/initialize', { protocolVersion: PROTOCOL_VERSION, appCapabilities: {} })

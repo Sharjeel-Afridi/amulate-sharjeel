@@ -15,3 +15,6 @@ npm-debug.log*
 coverage/
 .idea/
 .vscode/
+
+# Widget previews rendered by `npm run preview -w @car/mcp-marketplace`.
+apps/web/public/__widget-*.html

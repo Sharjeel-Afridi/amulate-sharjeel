@@ -266,14 +266,18 @@ export async function startBooking(ctx: TurnContext, listingId: string): Promise
   ctx.mcpApp('start_booking', html)
 }
 
-/** The booking form submitted itself; hand the user straight to checkout. */
-export async function handleBookingSubmitted(ctx: TurnContext, result: unknown): Promise<void> {
+/**
+ * The booking form held the booking and moved itself on to payment.
+ *
+ * Nothing is rendered here. The widget owns the whole transaction — dates,
+ * extras, driver, payment — and advances between its own steps in place. Pushing
+ * a second MCP App at this point is what used to leave the filled-in booking
+ * form sitting above the payment screen for the rest of the conversation.
+ */
+export function handleBookingSubmitted(ctx: TurnContext, result: unknown): void {
   const booking = result as { bookingId: string; total: number; listing: string }
   ctx.step('Booking held', `${booking.bookingId} · ${money(booking.total)}`)
-  ctx.say(`Held ${booking.listing} for you. Here's the checkout — a mock, so no card is charged.`)
-
-  const { html } = await callToolForApp('start_checkout', { bookingId: booking.bookingId })
-  ctx.mcpApp('start_checkout', html)
+  ctx.say(`Held ${booking.listing} for you — ${money(booking.total)} in total. Payment next, and it's a mock, so no card is charged.`)
 }
 
 /** The checkout settled its simulated payment. */
