@@ -10,6 +10,7 @@ import {
 import { LlmDriver } from './drivers/agent.js'
 import { ScriptedDriver } from './drivers/scripted.js'
 import { readAgentConfig } from './agents/provider.js'
+import { getEpisode, questionStats } from './episodes.js'
 import { sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
 import { readOtelConfig, tracingEnabled, withTurn } from './otel/index.js'
@@ -131,6 +132,19 @@ app.get('/api/health', async (_req, res) => {
     // from the outside, and the difference is the first thing to establish.
     tracing: { enabled: tracingEnabled(), backend: readOtelConfig().backend },
   })
+})
+
+/** The session's episode — the full question/answer/outcome trail. */
+app.get('/api/session/:id/episode', (req, res) => {
+  if (!session(req, res)) return
+  const episode = getEpisode(sessionId(req))
+  if (!episode) return res.status(404).json({ error: 'no episode recorded yet' })
+  return res.json(episode)
+})
+
+/** Per-question effectiveness over this process's sessions. */
+app.get('/api/question-stats', (_req, res) => {
+  res.json(questionStats())
 })
 
 app.post('/api/session', (req, res) => {

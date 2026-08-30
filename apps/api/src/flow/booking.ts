@@ -1,5 +1,6 @@
 import { money } from '@car/shared'
 import type { TurnContext } from '../session.js'
+import { recordOutcome } from '../episodes.js'
 import { callToolForApp } from '../mcp.js'
 
 /**
@@ -25,6 +26,9 @@ export async function startBooking(ctx: TurnContext, listingId: string): Promise
   })
   ctx.step('Opened booking form', 'Rendered in chat as an MCP App')
   ctx.mcpApp('start_booking', html)
+  // The choice is the outcome the whole interview is scored against: which car,
+  // and where our ranking had put it.
+  recordOutcome(ctx.state, 'booked', listingId)
 }
 
 /** The booking form held the booking and moved itself on to payment. */
@@ -43,6 +47,7 @@ export function handlePaymentConfirmed(ctx: TurnContext, result: unknown): void 
   ctx.setPhase('done')
   ctx.step('Payment settled (simulated)')
   ctx.say(paid.confirmation)
+  recordOutcome(ctx.state, 'paid')
 }
 
 /** Shifts an ISO date by whole days, staying in UTC to avoid a local-tz slip. */

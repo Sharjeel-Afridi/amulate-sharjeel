@@ -13,6 +13,7 @@ import {
 import type { AuctionResult } from '@car/question-engine'
 import { type Preferences, screen } from '@car/shared'
 import type { TurnContext } from '../session.js'
+import { notePresented, recordTurn } from '../episodes.js'
 import { type Question, isSlotFilled, questionBank, questionById } from '../questions.js'
 import { buildAdaptiveQuestionSurface, buildJourneySurface } from '../surfaces.js'
 import { answerToPreferences, buildCriteria } from './criteria.js'
@@ -164,6 +165,7 @@ export function presentQuestion(ctx: TurnContext, decision: InterviewDecision): 
   const { question, auction, pool, index } = decision
 
   ctx.patchInterview({ currentQuestionId: question.id })
+  notePresented(ctx.sessionId, question.id, auction)
   if (auction) {
     const best = auction.considered[0]
     ctx.step(
@@ -235,7 +237,7 @@ export function recordAnswer(ctx: TurnContext, questionId: string, raw: unknown)
   )
   ctx.a2ui(buildJourneySurface(ctx.state))
 
-  return {
+  const record: TurnRecord = {
     questionId,
     answer: value,
     skipped: false,
@@ -244,6 +246,8 @@ export function recordAnswer(ctx: TurnContext, questionId: string, raw: unknown)
     confBefore,
     confAfter: poolConfidence(after),
   }
+  recordTurn(ctx.state, record)
+  return record
 }
 
 /** A skip is an answer about salience — recorded, never re-asked. */
@@ -256,7 +260,7 @@ export function recordSkip(ctx: TurnContext, questionId: string): TurnRecord {
     currentQuestionId: undefined,
   })
   clearDraft(ctx.sessionId)
-  return {
+  const record: TurnRecord = {
     questionId,
     answer: null,
     skipped: true,
@@ -265,6 +269,8 @@ export function recordSkip(ctx: TurnContext, questionId: string): TurnRecord {
     confBefore: conf,
     confAfter: conf,
   }
+  recordTurn(ctx.state, record)
+  return record
 }
 
 const poolConfidence = (pool: PoolEvaluation): Confidence =>
@@ -272,6 +278,10 @@ const poolConfidence = (pool: PoolEvaluation): Confidence =>
     pool.top.map((t) => t.score),
     DEFAULT_CONFIG.temperature,
   )
+
+/** Confidence over the pool as it stands — for logs written outside the loop. */
+export const currentConfidence = (prefs: Preferences): Confidence =>
+  poolConfidence(evaluatePool(prefs))
 
 /** The stop, said out loud. All counts ours, as everywhere. */
 export function announceStop(ctx: TurnContext, decision: InterviewDecision & { kind: 'stop' }): void {

@@ -12,12 +12,14 @@ import {
 } from '../flow/index.js'
 import {
   announceStop,
+  currentConfidence,
   decideNext,
   draftFor,
   presentQuestion,
   recordAnswer,
   recordSkip,
 } from '../flow/interview.js'
+import { recordRecommendation } from '../episodes.js'
 
 /**
  * The seam between the app and whatever is driving the conversation.
@@ -59,6 +61,11 @@ export async function advanceAdaptive(driver: Driver, ctx: TurnContext): Promise
   announceStop(ctx, decision)
   ctx.patchInterview({ confirmed: true, currentQuestionId: undefined })
   await runSearch(ctx, { reorder: driver.reorder })
+  recordRecommendation(ctx.state, {
+    pTop1: decision.conf.pTop1,
+    margin: decision.conf.margin,
+    stopReason: decision.reason,
+  })
 }
 
 /** An action fired by an A2UI-rendered control. Identical for both drivers. */
@@ -107,10 +114,18 @@ export async function handleUiAction(
     // the product: the interview is a lookup, but ordering cars against what
     // someone said is a judgement.
     case 'confirmSpec':
-    case 'searchAgain':
+    case 'searchAgain': {
+      const cutShort = ctx.state.phase === 'interview' && ctx.state.interview.style === 'adaptive'
       ctx.patchInterview({ confirmed: true, currentQuestionId: undefined })
       await runSearch(ctx, { reorder: driver.reorder })
+      // "Show me the matches now" is a stop too — the user's own, and the
+      // episode needs to know the interview ended on their terms.
+      if (cutShort) {
+        const conf = currentConfidence(ctx.state.preferences)
+        recordRecommendation(ctx.state, { pTop1: conf.pTop1, margin: conf.margin, stopReason: 'user' })
+      }
       return
+    }
 
     // Selecting opens the car; booking is a separate, deliberate second tap.
     case 'selectCar':
