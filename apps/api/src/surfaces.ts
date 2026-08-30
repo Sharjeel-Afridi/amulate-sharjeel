@@ -403,13 +403,13 @@ export interface AdaptiveQuestionInfo {
 /** Option buttons, paired into rows once the list gets tall. */
 function optionGrid(
   options: { label: string; value: string }[],
-  make: (opt: { label: string; value: string }, i: number) => [A2uiComponent, A2uiComponent],
+  make: (opt: { label: string; value: string }, i: number) => A2uiComponent,
 ): { rootIds: string[]; components: A2uiComponent[] } {
   const components: A2uiComponent[] = []
   const ids: string[] = []
   for (const [i, opt] of options.entries()) {
-    const [btn, label] = make(opt, i)
-    components.push({ ...btn, weight: 1 }, label)
+    const btn = make(opt, i)
+    components.push({ ...btn, weight: 1 })
     ids.push(String(btn.id))
   }
   if (options.length <= 4) return { rootIds: ids, components }
@@ -447,18 +447,15 @@ export function buildAdaptiveQuestionSurface(
     i: number,
     selected = false,
     toggle = false,
-  ): [A2uiComponent, A2uiComponent] => [
-    {
-      id: `qOpt${i}`,
-      component: 'Button',
-      child: `qOpt${i}Label`,
-      variant: selected ? 'primary' : 'default',
-      action: toggle
-        ? { event: { name: 'toggleAnswer', context: { questionId: question.id, value: opt.value } } }
-        : answerAction(opt.value),
-    },
-    text(`qOpt${i}Label`, opt.label),
-  ]
+  ): A2uiComponent => ({
+    id: `qOpt${i}`,
+    component: 'ChoiceButton',
+    label: opt.label,
+    selected,
+    action: toggle
+      ? { event: { name: 'toggleAnswer', context: { questionId: question.id, value: opt.value } } }
+      : answerAction(opt.value),
+  })
 
   switch (question.control) {
     case 'chips': {
@@ -531,16 +528,26 @@ export function buildAdaptiveQuestionSurface(
 
   const footerIds: string[] = []
   if (info.skippable) {
-    components.push(button('qSkip', 'qSkipLabel', 'skipQuestion', 'borderless', { questionId: question.id }))
-    components.push(text('qSkipLabel', 'Skip this one'))
+    components.push({
+      id: 'qSkip',
+      component: 'ChoiceButton',
+      label: 'Skip this one',
+      kind: 'quiet',
+      action: { event: { name: 'skipQuestion', context: { questionId: question.id } } },
+    })
     footerIds.push('qSkip')
   }
   if (info.searchable) {
-    components.push(button('qSearchNow', 'qSearchNowLabel', 'confirmSpec', 'borderless'))
-    components.push(text('qSearchNowLabel', 'Show me the matches now'))
+    components.push({
+      id: 'qSearchNow',
+      component: 'ChoiceButton',
+      label: 'Show me the matches now',
+      kind: 'quiet',
+      action: { event: { name: 'confirmSpec', context: {} } },
+    })
     footerIds.push('qSearchNow')
   }
-  if (footerIds.length > 0) components.push(row('qFooter', footerIds, { justify: 'start' }))
+  if (footerIds.length > 0) components.push(row('qFooter', footerIds, { justify: 'center' }))
 
   return [
     updateDataModel(SURFACES.interview, '/', {

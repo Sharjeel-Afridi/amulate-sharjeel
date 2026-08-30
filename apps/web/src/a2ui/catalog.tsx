@@ -391,6 +391,41 @@ export const SpecRow = createComponentImplementation(SpecRowApi, ({ props }) => 
   )
 })
 
+export const ChoiceButtonApi = {
+  name: 'ChoiceButton',
+  schema: z.object({
+    ...commonProps,
+    label: CommonSchemas.DynamicString,
+    /** Reads as picked — the adaptive interview's multi-select toggles. */
+    selected: CommonSchemas.DynamicBoolean.optional(),
+    /** 'quiet' renders as a text link — skip/escape actions, not answers. */
+    kind: CommonSchemas.DynamicString.optional(),
+    action: CommonSchemas.Action.optional(),
+  }),
+}
+
+/**
+ * A tappable answer option for the adaptive interview.
+ *
+ * The interview's CSS deliberately turns every plain Button into the lime
+ * call-to-action, so answer options need their own identity: full-width,
+ * neutral until hovered, and visibly "picked" when a multi-select holds them.
+ * The `chip` class is what exempts them from the CTA styling.
+ */
+export const ChoiceButton = createComponentImplementation(ChoiceButtonApi, ({ props }) => (
+  <button
+    type="button"
+    className={
+      'chip choice' +
+      (props.selected ? ' choice--selected' : '') +
+      (props.kind === 'quiet' ? ' choice--quiet' : '')
+    }
+    onClick={() => props.action?.()}
+  >
+    {typeof props.label === 'string' ? props.label : ''}
+  </button>
+))
+
 export const ReasoningStepApi = {
   name: 'ReasoningStep',
   schema: z.object({
@@ -423,6 +458,7 @@ export const ReasoningStep = createComponentImplementation(ReasoningStepApi, ({ 
 /** Every custom component, in registration order. */
 export const CUSTOM_COMPONENTS: ReactComponentImplementation[] = [
   CarCard,
+  ChoiceButton,
   MatchScore,
   PriceBadge,
   ReasoningStep,

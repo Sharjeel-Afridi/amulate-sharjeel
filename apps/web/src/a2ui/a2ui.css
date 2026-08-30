@@ -1034,6 +1034,44 @@
   filter: none;
 }
 
+/* The adaptive interview's answer options. `chip` exempts them from the CTA
+   rule above; `choice` gives them their own shape: neutral until hovered,
+   visibly picked when a multi-select holds them, quiet for escape actions. */
+.interview .a2ui-host button.choice {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 16px;
+  font-size: 14.5px;
+  font-weight: 550;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text, #f4f6f8);
+}
+.interview .a2ui-host button.choice:hover {
+  border-color: var(--accent, #c8ff3d);
+  background: rgba(200, 255, 61, 0.08);
+}
+.interview .a2ui-host button.choice--selected {
+  border-color: var(--accent, #c8ff3d);
+  background: rgba(200, 255, 61, 0.16);
+  color: var(--accent, #c8ff3d);
+}
+.interview .a2ui-host button.choice--quiet,
+.interview .a2ui-host button.choice--quiet:hover {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+  color: var(--faint, #6b7480);
+}
+.interview .a2ui-host button.choice--quiet:hover {
+  color: var(--text, #f4f6f8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* Standalone text, date and number answers get real presence. Scoped away from
    the sheet's own inputs, which are sized as rows — without the exclusion this
    selector outweighs them and every row grows a 46px field. */
