@@ -1,5 +1,6 @@
 import type { Preferences, PurchaseListing } from '@car/shared'
 import { type Contribution, type Scored, composeScore } from './compose.js'
+import { emphasised } from './emphasis.js'
 import type { PurchaseStats } from './peers.js'
 import { sharedContributions } from './shared-factors.js'
 import {
@@ -39,10 +40,22 @@ export const BUY_WEIGHTS = {
   runningCosts: 5,
 } as const
 
+/** Which weights a stated priority amplifies. Read alongside the table above. */
+const BUY_EMPHASIS: Partial<Record<string, readonly (keyof typeof BUY_WEIGHTS)[]>> = {
+  economy: ['runningCosts'],
+  boot: ['bootLitres'],
+  seats: ['seats'],
+  rating: ['rating'],
+  value: ['price', 'financeMonthly'],
+  condition: ['mileageKm', 'age', 'previousOwners'],
+  cover: ['warrantyMonths'],
+}
+
 /** Rough European average annual mileage, used when the user set no cap. */
 const KM_PER_YEAR = 15_000
 
 export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stats: PurchaseStats): Scored {
+  const W = emphasised(BUY_WEIGHTS, prefs, BUY_EMPHASIS)
   const out: Contribution[] = []
   const age = Math.max(0, REFERENCE_YEAR - listing.year)
 
@@ -51,7 +64,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
     const gap = budget - listing.price
     out.push({
       label: 'Purchase price',
-      weight: BUY_WEIGHTS.price,
+      weight: W.price,
       sub: budgetSub(listing.price, budget),
       detail:
         gap >= 0
@@ -61,7 +74,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
   } else {
     out.push({
       label: 'Purchase price',
-      weight: BUY_WEIGHTS.price,
+      weight: W.price,
       sub: signed(lowerIsBetter(listing.price, stats.price)),
       detail: `${priceText(listing.price)}, against ${priceText(stats.price.min)}–${priceText(stats.price.max)} here`,
     })
@@ -72,7 +85,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
     const gap = cap - listing.mileageKm
     out.push({
       label: 'Mileage',
-      weight: BUY_WEIGHTS.mileageKm,
+      weight: W.mileageKm,
       // Full marks at 40% of the stated cap; below that the extra kilometres
       // saved stop being what the user is choosing on.
       sub: gap >= 0 ? clamp(gap / (cap * 0.6), 0, 1) : -clamp(0.2 + -gap / (cap * 0.3), 0.2, 1),
@@ -87,7 +100,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
     const expected = Math.max(1, age) * KM_PER_YEAR
     out.push({
       label: 'Mileage',
-      weight: BUY_WEIGHTS.mileageKm,
+      weight: W.mileageKm,
       sub: clamp((expected - listing.mileageKm) / expected, -1, 1),
       detail: `${kms(listing.mileageKm)} at ${plural(age, 'year')} old, against ${kms(expected)} typical`,
     })
@@ -98,7 +111,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
     const gap = listing.year - minYear
     out.push({
       label: 'Age',
-      weight: BUY_WEIGHTS.age,
+      weight: W.age,
       sub: gap >= 0 ? 0.15 + 0.85 * clamp(gap / 4, 0, 1) : -clamp(0.3 + -gap / 4, 0.3, 1),
       detail:
         gap >= 0
@@ -108,7 +121,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
   } else {
     out.push({
       label: 'Age',
-      weight: BUY_WEIGHTS.age,
+      weight: W.age,
       sub: signed(higherIsBetter(listing.year, stats.year)),
       detail: age === 0 ? `${listing.year}, current model year` : `${listing.year}, ${plural(age, 'year')} old`,
     })
@@ -116,7 +129,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
 
   out.push({
     label: 'Previous owners',
-    weight: BUY_WEIGHTS.previousOwners,
+    weight: W.previousOwners,
     sub: signed(1 - position(listing.previousOwners, 1, 3)),
     detail:
       listing.previousOwners === 1
@@ -126,7 +139,7 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
 
   out.push({
     label: 'Warranty',
-    weight: BUY_WEIGHTS.warrantyMonths,
+    weight: W.warrantyMonths,
     sub: signed(position(listing.warrantyMonths, 0, 24)),
     detail: listing.warrantyMonths
       ? `${plural(listing.warrantyMonths, 'month')} of warranty from ${listing.dealer}`
@@ -135,12 +148,12 @@ export function scorePurchase(listing: PurchaseListing, prefs: Preferences, stat
 
   out.push({
     label: 'Finance monthly',
-    weight: BUY_WEIGHTS.financeMonthly,
+    weight: W.financeMonthly,
     sub: signed(lowerIsBetter(listing.financeMonthly, stats.financeMonthly)),
     detail: `${priceText(listing.financeMonthly)} a month over 48 months if financed`,
   })
 
-  out.push(...sharedContributions(listing, prefs, stats, BUY_WEIGHTS))
+  out.push(...sharedContributions(listing, prefs, stats, W))
 
   return composeScore(out)
 }

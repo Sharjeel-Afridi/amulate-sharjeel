@@ -1,4 +1,12 @@
-import { CATEGORY_LABELS, CURRENCY_SYMBOL, type Preferences, money } from '@car/shared'
+import {
+  CATEGORY_LABELS,
+  CURRENCY_SYMBOL,
+  MAX_PRIORITIES,
+  type Preferences,
+  money,
+  prioritiesFor,
+  priorityLabel,
+} from '@car/shared'
 import { availableCategories } from '@car/catalog'
 
 /**
@@ -133,6 +141,20 @@ export const QUESTIONS: Question[] = [
       { label: "Doesn't matter", value: '0' },
     ],
   },
+  // Split by mode like budget/budgetBuy: the options differ because the data
+  // differs — warranty is a purchase concept, a km allowance a rental one.
+  {
+    id: 'priorities',
+    ask: `What matters most to you? Pick up to ${MAX_PRIORITIES}.`,
+    control: 'multi',
+    options: prioritiesFor('rent').map((p) => ({ label: p.label, value: p.id })),
+  },
+  {
+    id: 'prioritiesBuy',
+    ask: `What matters most to you? Pick up to ${MAX_PRIORITIES}.`,
+    control: 'multi',
+    options: prioritiesFor('buy').map((p) => ({ label: p.label, value: p.id })),
+  },
   {
     id: 'dealbreakers',
     ask: 'Last one, and the most useful — anything that would rule a car out completely?',
@@ -171,12 +193,14 @@ export interface SpecSheetRow {
   step: number
   unit: string
   /**
-   * Wants the full width of the form's two-column grid. Only the dealbreakers:
-   * both modes emit ten other rows, so one full-width row at the end leaves five
-   * clean pairs above it and no orphan half-row anywhere.
+   * Wants the full width of the form's two-column grid. Priorities and
+   * dealbreakers: both modes emit ten other rows, so two full-width rows at the
+   * end leave five clean pairs above them and no orphan half-row anywhere.
    */
   wide: boolean
 }
+
+const WIDE_ROWS = new Set(['priorities', 'prioritiesBuy', 'dealbreakers'])
 
 /**
  * The whole spec, as editable rows.
@@ -203,7 +227,7 @@ export function specSheet(prefs: Preferences): SpecSheetRow[] {
       max: q?.max ?? 0,
       step: q?.step ?? 1,
       unit: q?.unit ?? '',
-      wide: questionId === 'dealbreakers',
+      wide: WIDE_ROWS.has(questionId),
     }
   }
 
@@ -260,6 +284,16 @@ export function specSheet(prefs: Preferences): SpecSheetRow[] {
     row(renting ? 'From' : 'Collection', 'targetDate', prefs.targetDate ?? '', prefs.targetDate ?? ''),
   )
   if (renting) rows.push(row('Until', 'returnDate', prefs.returnDate ?? '', prefs.returnDate ?? ''))
+
+  const priorities = prefs.priorities ?? []
+  rows.push(
+    row(
+      'Top priorities',
+      renting ? 'priorities' : 'prioritiesBuy',
+      priorities.map(priorityLabel).join(', '),
+      priorities.join(','),
+    ),
+  )
 
   rows.push(
     row(

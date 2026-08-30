@@ -1,4 +1,5 @@
 export * from './compose.js'
+export * from './emphasis.js'
 export * from './peers.js'
 export * from './rank.js'
 export * from './rationale.js'

@@ -36,6 +36,11 @@ export interface Preferences {
   minYear?: number
   /** Dealbreaker ids from the interview — 'no-diesel', 'strict-budget', … */
   dealbreakers?: string[]
+  /**
+   * Priority ids from PRIORITIES, at most MAX_PRIORITIES of them. These shape
+   * the scorer's weights rather than filtering — see `emphasised` in ranking.
+   */
+  priorities?: string[]
 }
 
 export interface SearchSummary {
