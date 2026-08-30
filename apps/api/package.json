@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@car/catalog": "*",
+    "@car/question-engine": "*",
     "@car/ranking": "*",
     "@car/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",

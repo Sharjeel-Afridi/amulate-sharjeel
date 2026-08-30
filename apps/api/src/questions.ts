@@ -8,6 +8,7 @@ import {
   priorityLabel,
 } from '@car/shared'
 import { availableCategories } from '@car/catalog'
+import type { BankQuestion } from '@car/question-engine'
 
 /**
  * The interview: what it asks, and how the answers read back as a spec sheet.
@@ -32,6 +33,21 @@ export interface Question {
   max?: number
   step?: number
   unit?: string
+  /**
+   * How the answer earns its keep in the adaptive interview: `hard` filters the
+   * pool, `weight` re-ranks it, `context` seeds several fields at once.
+   */
+  kind?: 'hard' | 'weight' | 'context'
+  /**
+   * Values the auction simulates as plausible answers. Options double as the
+   * default; sliders and multi-selects need explicit representative points.
+   */
+  simValues?: unknown[]
+  /**
+   * False keeps the question out of the adaptive loop — free text the auction
+   * cannot simulate, and dates the booking form collects anyway.
+   */
+  adaptive?: boolean
 }
 
 /**
@@ -49,16 +65,26 @@ export const QUESTIONS: Question[] = [
     id: 'mode',
     ask: 'First things first — are you looking to rent, or to buy?',
     control: 'chips',
+    kind: 'hard',
     options: [
       { label: 'Rent', value: 'rent' },
       { label: 'Buy', value: 'buy' },
     ],
   },
-  { id: 'useCase', ask: 'What will you mainly use it for? A sentence is plenty.', control: 'text' },
+  {
+    id: 'useCase',
+    ask: 'What will you mainly use it for? A sentence is plenty.',
+    control: 'text',
+    kind: 'context',
+    // Free text cannot be simulated, so the auction never prices it — the
+    // adaptive flow seeds it by hand instead, for what its extraction unlocks.
+    adaptive: false,
+  },
   {
     id: 'passengers',
     ask: 'How many people need to fit, most of the time?',
     control: 'chips',
+    kind: 'hard',
     // The fleet seats 4, 5, 7 or 9 — nothing smaller exists to offer.
     options: [
       { label: 'Up to four', value: '4' },
@@ -71,6 +97,7 @@ export const QUESTIONS: Question[] = [
     id: 'category',
     ask: 'Any particular kind of car in mind?',
     control: 'chips',
+    kind: 'hard',
     options: categoryOptions,
   },
   // Both sliders are scaled to what is actually on the forecourt — hire runs
@@ -84,6 +111,8 @@ export const QUESTIONS: Question[] = [
     max: 10000,
     step: 250,
     unit: `${CURRENCY_SYMBOL}/month`,
+    kind: 'hard',
+    simValues: [1500, 2500, 4000, 6500, 9000],
   },
   {
     id: 'budgetBuy',
@@ -93,13 +122,16 @@ export const QUESTIONS: Question[] = [
     max: 170000,
     step: 5000,
     unit: CURRENCY_SYMBOL,
+    kind: 'hard',
+    simValues: [20000, 35000, 60000, 100000, 150000],
   },
-  { id: 'targetDate', ask: 'When do you need it from?', control: 'date' },
-  { id: 'returnDate', ask: 'And until when?', control: 'date' },
+  { id: 'targetDate', ask: 'When do you need it from?', control: 'date', adaptive: false },
+  { id: 'returnDate', ask: 'And until when?', control: 'date', adaptive: false },
   {
     id: 'luggage',
     ask: 'How much are you usually carrying?',
     control: 'chips',
+    kind: 'weight',
     // Thresholds sit on the real boot distribution, which clusters hard at 460 L.
     options: [
       { label: 'Not much', value: '0' },
@@ -112,6 +144,7 @@ export const QUESTIONS: Question[] = [
     id: 'fuel',
     ask: 'Any preference on fuel?',
     control: 'chips',
+    kind: 'weight',
     options: [
       { label: 'No preference', value: 'any' },
       { label: 'Petrol', value: 'petrol' },
@@ -124,6 +157,7 @@ export const QUESTIONS: Question[] = [
     id: 'transmission',
     ask: 'Automatic or manual?',
     control: 'chips',
+    kind: 'hard',
     options: [
       { label: 'No preference', value: 'any' },
       { label: 'Automatic', value: 'automatic' },
@@ -134,6 +168,7 @@ export const QUESTIONS: Question[] = [
     id: 'mileage',
     ask: 'How much mileage would you accept?',
     control: 'chips',
+    kind: 'hard',
     options: [
       { label: 'Under 30,000 km', value: '30000' },
       { label: 'Under 60,000 km', value: '60000' },
@@ -147,18 +182,26 @@ export const QUESTIONS: Question[] = [
     id: 'priorities',
     ask: `What matters most to you? Pick up to ${MAX_PRIORITIES}.`,
     control: 'multi',
+    kind: 'weight',
     options: prioritiesFor('rent').map((p) => ({ label: p.label, value: p.id })),
+    simValues: prioritiesFor('rent').map((p) => [p.id]),
   },
   {
     id: 'prioritiesBuy',
     ask: `What matters most to you? Pick up to ${MAX_PRIORITIES}.`,
     control: 'multi',
+    kind: 'weight',
     options: prioritiesFor('buy').map((p) => ({ label: p.label, value: p.id })),
+    simValues: prioritiesFor('buy').map((p) => [p.id]),
   },
   {
     id: 'dealbreakers',
     ask: 'Last one, and the most useful — anything that would rule a car out completely?',
     control: 'multi',
+    kind: 'hard',
+    // Single-exclusion approximations: the auction wants "what would knowing
+    // one dealbreaker do", not the power set.
+    simValues: [['no-diesel'], ['no-manual'], ['no-old'], ['strict-budget'], []],
     options: [
       { label: 'No diesel', value: 'no-diesel' },
       { label: 'No manual', value: 'no-manual' },
@@ -172,6 +215,69 @@ export const QUESTIONS: Question[] = [
 ]
 
 export const questionById = (id: string): Question | undefined => QUESTIONS.find((q) => q.id === id)
+
+/* ------------------------------------------------------- the adaptive bank */
+
+/** Friction per control: roughly how much reading and thinking one answer costs. */
+const CONTROL_COST: Record<ControlKind, number> = {
+  chips: 1,
+  slider: 1.2,
+  multi: 1.4,
+  date: 1.5,
+  text: 2.5,
+}
+
+/**
+ * Whether the slot a question fills already holds an answer — however it got
+ * there: a tapped control, typed text the extractor parsed, an edited spec row.
+ * The auction never asks about a filled slot, which is what makes "actually,
+ * 30k a month" land without the budget question following it.
+ */
+const FILLED: Record<string, (p: Preferences) => boolean> = {
+  mode: (p) => p.mode !== undefined,
+  useCase: (p) => p.useCase !== undefined,
+  passengers: (p) => p.seatsMin !== undefined,
+  category: (p) => p.category !== undefined,
+  budget: (p) => p.budgetMax !== undefined,
+  budgetBuy: (p) => p.budgetMax !== undefined,
+  luggage: (p) => p.bootLitresMin !== undefined,
+  fuel: (p) => p.fuel !== undefined,
+  transmission: (p) => p.transmission !== undefined,
+  mileage: (p) => p.maxMileageKm !== undefined,
+  priorities: (p) => (p.priorities?.length ?? 0) > 0,
+  prioritiesBuy: (p) => (p.priorities?.length ?? 0) > 0,
+  dealbreakers: (p) => p.dealbreakers !== undefined,
+}
+
+/** Hard gates on what must be known first. Mode splits the bank in two. */
+const PRECONDITION: Record<string, (p: Preferences) => boolean> = {
+  budget: (p) => p.mode !== 'buy',
+  budgetBuy: (p) => p.mode === 'buy',
+  mileage: (p) => p.mode === 'buy',
+  priorities: (p) => p.mode !== 'buy',
+  prioritiesBuy: (p) => p.mode === 'buy',
+  returnDate: (p) => p.mode !== 'buy',
+}
+
+/**
+ * The auction-facing projection of the interview. Wording and controls stay in
+ * `QUESTIONS`; this hands the engine only what it needs to price each one.
+ */
+export function questionBank(): BankQuestion[] {
+  return QUESTIONS.filter((q) => q.adaptive !== false)
+    .map((q) => ({
+      id: q.id,
+      kind: q.kind ?? 'hard',
+      cost: CONTROL_COST[q.control],
+      answers: (q.simValues ?? q.options?.map((o) => o.value) ?? []).map((value) => ({
+        value,
+        prior: 1,
+      })),
+      precondition: PRECONDITION[q.id],
+      filled: FILLED[q.id],
+    }))
+    .filter((q) => q.answers.length > 0)
+}
 
 /** The label an option list gives a raw value, falling back to the value. */
 const optionLabel = (questionId: string, value: string): string =>

@@ -165,6 +165,18 @@ export function buildCriteria(prefs: Preferences): Criterion[] {
       value: prefs.seatsMin,
     })
   }
+  if (prefs.transmission) {
+    // A requirement, not a preference: with two gearboxes there is no "close
+    // enough", and someone who cannot drive a manual is not stretching to one.
+    out.push({
+      id: 'transmission',
+      kind: 'requirement',
+      label: prefs.transmission === 'automatic' ? 'An automatic' : 'A manual',
+      field: 'transmission',
+      op: 'eq',
+      value: prefs.transmission,
+    })
+  }
   if (prefs.maxMileageKm) {
     out.push({
       id: 'mileage',
