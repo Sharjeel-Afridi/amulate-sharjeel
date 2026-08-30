@@ -1,4 +1,4 @@
-import type { Criterion, ListingAssessment } from './criteria.js'
+import type { Criterion } from './criteria.js'
 import type { Category, FuelType, Mode, RankedListing, Transmission } from './domain.js'
 
 /** The agent's journey. Transitions are explicit, so the UI can render them. */
@@ -97,9 +97,6 @@ export interface SessionState {
   criteria: Criterion[]
   search?: SearchSummary
   shortlist: RankedListing[]
-  /** Cars a hard criterion removed, kept so the user can see what and why. */
-  ruledOut: ListingAssessment[]
-  booking?: Booking
   createdAt: string
   updatedAt: string
 }
@@ -114,7 +111,6 @@ export function createSessionState(sessionId: string, mode: DriverMode = 'script
     preferences: {},
     criteria: [],
     shortlist: [],
-    ruledOut: [],
     createdAt: now,
     updatedAt: now,
   }

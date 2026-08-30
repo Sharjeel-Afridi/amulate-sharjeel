@@ -1,5 +1,6 @@
 import { CURRENCY_SYMBOL, type RankedListing, type SessionState, isRental, money } from '@car/shared'
 import {
+  type A2uiComponent,
   type A2uiMessage,
   CAR_CATALOG,
   SURFACES,
@@ -15,46 +16,127 @@ import { specSheet } from './questions.js'
 /**
  * Server-side A2UI surface builders.
  *
- * These are typed and deterministic on purpose. Having the model author every
- * surface would be slower, costlier and far more fragile; it earns its place on
- * the comparison view, where the layout genuinely depends on what is being
- * compared. Everything structural is built here.
+ * Typed and deterministic on purpose: having the model author every surface
+ * would be slower, costlier and far more fragile. Everything structural is
+ * built here.
+ *
+ * Two things to know before editing. Bindings inside a templated fan-out
+ * (`children: { componentId, path }`) are relative and carry no leading slash —
+ * `'/score'` there resolves to a broken pointer. And component ids are global
+ * per surface, which is why the shared blocks below take an id prefix.
  */
 
 /**
  * Create the surfaces once, at session start.
  *
  * `createSurface` throws if the surface already exists, so creation is separated
- * from update rather than being re-sent on every turn. This also matches the
- * protocol's intent: surfaces are long-lived and patched incrementally.
+ * from update rather than re-sent on every turn — which also matches the
+ * protocol's intent that surfaces are long-lived and patched incrementally.
+ *
+ * All three use our merged catalog, so `SpecRow`, `CarCard` and friends resolve
+ * on any of them.
  */
 export function initSurfaces(): A2uiMessage[] {
   return [
-    // All three use our merged catalog, so SpecRow, CarCard and friends resolve
-    // on any of them. The interview used to be enough with the basic set, back
-    // when it rendered one stock control at a time; it is a SpecRow sheet now.
     createSurface(SURFACES.journey, CAR_CATALOG),
     createSurface(SURFACES.stage, CAR_CATALOG),
     createSurface(SURFACES.interview, CAR_CATALOG),
   ]
 }
 
+/* ------------------------------------------------------------ shared blocks */
+
+/** The score-and-price line every card carries. `base` is '' inside a template. */
+function metaRow(prefix: string, base = ''): A2uiComponent[] {
+  return [
+    row(`${prefix}Meta`, [`${prefix}Score`, `${prefix}Price`], {
+      justify: 'spaceBetween',
+      align: 'center',
+    }),
+    { id: `${prefix}Score`, component: 'MatchScore', score: { path: `${base}score` }, label: 'match' },
+    {
+      id: `${prefix}Price`,
+      component: 'PriceBadge',
+      amount: { path: `${base}price` },
+      currency: CURRENCY_SYMBOL,
+      period: { path: `${base}period` },
+    },
+  ]
+}
+
+/** A read-only label/value row, bound to the item a template is fanned over. */
+const readOnlyRow = (id: string): A2uiComponent => ({
+  id,
+  component: 'SpecRow',
+  label: { path: 'label' },
+  value: { path: 'value' },
+  filled: { path: 'filled' },
+})
+
+/**
+ * An editable spec row.
+ *
+ * The form and the drawer render the same rows from the same `specSheet`, so
+ * this template is shared: a value means exactly what it meant when it was
+ * asked. `wide` is only bound on the form, which is the one laid out as a grid.
+ *
+ * Context is resolved against the data model when the action fires, so the row
+ * writes its new value to `editValue` first and this picks it up at dispatch.
+ */
+const editableRow = (id: string, wide: boolean): A2uiComponent => ({
+  ...readOnlyRow(id),
+  questionId: { path: 'questionId' },
+  control: { path: 'control' },
+  options: { path: 'options' },
+  editValue: { path: 'editValue' },
+  min: { path: 'min' },
+  max: { path: 'max' },
+  step: { path: 'step' },
+  unit: { path: 'unit' },
+  ...(wide ? { wide: { path: 'wide' } } : {}),
+  action: {
+    event: {
+      name: 'editSpec',
+      context: { questionId: { path: 'questionId' }, value: { path: 'editValue' } },
+    },
+  },
+})
+
+const button = (
+  id: string,
+  labelId: string,
+  event: string,
+  variant: string,
+  context: Record<string, unknown> = {},
+): A2uiComponent => ({
+  id,
+  component: 'Button',
+  child: labelId,
+  variant,
+  action: { event: { name: event, context } },
+})
+
+/** A component list fanned out over an array in the data model. */
+const templated = (id: string, componentId: string, path: string): A2uiComponent => ({
+  id,
+  component: 'Column',
+  children: { componentId, path },
+})
+
+/* ----------------------------------------------------------------- journey */
+
 /**
  * The spec sheet, assembling as the interview proceeds.
  *
- * Rendered as label/value rows rather than a column of sentences. Both carry the
- * same words, but only the paired form lets someone scan down the right-hand
- * column and see at a glance what is still blank — which is the entire job of
- * showing the spec before anything is searched.
+ * Label/value rows rather than a column of sentences: only the paired form lets
+ * someone scan the right-hand column and see at a glance what is still blank,
+ * which is the whole job of showing the spec before anything is searched.
  */
 export function buildJourneySurface(state: SessionState): A2uiMessage[] {
-  const rows = specSheet(state.preferences)
-
   // Re-searching only means anything once a search has happened. Before that the
-  // spec is still being assembled and "Search on this" on the interview surface
-  // is the way in.
-  const canResearch = state.interview.confirmed
-  const roots = canResearch ? ['sheet', 'again'] : ['sheet']
+  // spec is still being assembled and the interview form's button is the way in.
+  const searched = state.interview.confirmed
+  const { dirty } = state.interview
 
   return [
     // The whole row set goes into the data model so the template fans out over
@@ -63,46 +145,16 @@ export function buildJourneySurface(state: SessionState): A2uiMessage[] {
       phase: state.phase,
       preferences: state.preferences,
       search: state.search ?? null,
-      rows,
-      againLabel: state.interview.dirty ? 'Search again with these changes' : 'Search again',
+      rows: specSheet(state.preferences),
+      againLabel: dirty ? 'Search again with these changes' : 'Search again',
     }),
     updateComponents(SURFACES.journey, [
-      column('root', roots),
-      { id: 'sheet', component: 'Column', children: { componentId: 'specRow', path: '/rows' } },
-      {
-        id: 'specRow',
-        component: 'SpecRow',
-        label: { path: 'label' },
-        value: { path: 'value' },
-        filled: { path: 'filled' },
-        // Everything below is what makes the row editable. A row with no
-        // questionId renders exactly as before.
-        questionId: { path: 'questionId' },
-        control: { path: 'control' },
-        options: { path: 'options' },
-        editValue: { path: 'editValue' },
-        min: { path: 'min' },
-        max: { path: 'max' },
-        step: { path: 'step' },
-        unit: { path: 'unit' },
-        // Context is resolved against the data model when the action fires, so
-        // the row writes the new value to `editValue` first and this picks it up.
-        action: {
-          event: {
-            name: 'editSpec',
-            context: { questionId: { path: 'questionId' }, value: { path: 'editValue' } },
-          },
-        },
-      },
-      ...(canResearch
+      column('root', searched ? ['sheet', 'again'] : ['sheet']),
+      templated('sheet', 'specRow', '/rows'),
+      editableRow('specRow', false),
+      ...(searched
         ? [
-            {
-              id: 'again',
-              component: 'Button',
-              child: 'againLabel',
-              variant: state.interview.dirty ? 'primary' : 'borderless',
-              action: { event: { name: 'searchAgain', context: {} } },
-            },
+            button('again', 'againLabel', 'searchAgain', dirty ? 'primary' : 'borderless'),
             text('againLabel', { path: '/againLabel' }),
           ]
         : []),
@@ -110,7 +162,9 @@ export function buildJourneySurface(state: SessionState): A2uiMessage[] {
   ]
 }
 
-/** Stage while the agent is searching — live counters rather than a dead spinner. */
+/* ------------------------------------------------------------------- stage */
+
+/** Stage while the agent is searching — a live note rather than a dead spinner. */
 export function buildSearchingSurface(): A2uiMessage[] {
   return [
     updateComponents(SURFACES.stage, [
@@ -122,7 +176,7 @@ export function buildSearchingSurface(): A2uiMessage[] {
 }
 
 /** One card's worth of data, shared by the shortlist and the tail. */
-function cardData(entry: RankedListing, nearMiss = false) {
+function cardData(entry: RankedListing, nearMiss: boolean) {
   const { listing, rank, score, rationale } = entry
   const rental = isRental(listing)
   return {
@@ -151,13 +205,26 @@ function cardData(entry: RankedListing, nearMiss = false) {
 const LEAD_COUNT = 3
 
 /**
- * Stage: the ranked catalogue.
+ * The headline over the ranked catalogue.
  *
- * Split into a leading few and a compact tail. Eight identical full-height
- * cards is five screens of scrolling in which every result argues for itself
- * just as loudly as the winner, which is the opposite of what a ranking is for.
- * The first three keep the staged treatment; the rest state their case in a row
- * apiece and open in full when tapped.
+ * Near-misses are never called matches, and neither are the cars a soft budget
+ * put on the list deliberately: "3 matches" over three cards each captioned
+ * "misses your budget" reads as a bug.
+ */
+function headline(total: number, nearMiss: boolean, stretched: number): string {
+  if (nearMiss) return 'Nothing cleared every condition — closest first'
+  if (stretched >= total) return `Nothing matches everything — closest ${total}, ranked`
+  if (stretched > 0) return `${total - stretched} matching, then ${stretched} that stretch your spec`
+  return total === 1 ? '1 match' : `${total} matches, ranked`
+}
+
+/**
+ * Stage: the ranked catalogue, as a leading few and a compact tail.
+ *
+ * Eight identical full-height cards is five screens of scrolling in which every
+ * result argues for itself as loudly as the winner, which is the opposite of
+ * what a ranking is for. The first three keep the staged treatment; the rest
+ * state their case in a row apiece and open in full when tapped.
  *
  * Every card carries its rationale — that is what separates this from a listings
  * page, so it is structural, not decorative.
@@ -166,17 +233,12 @@ export function buildCatalogueSurface(
   shortlist: RankedListing[],
   { nearMiss = false, stretched = 0 }: { nearMiss?: boolean; stretched?: number } = {},
 ): A2uiMessage[] {
-  // Data-driven rather than one component per car: the card is declared once as
-  // a template and fanned out over the arrays, so re-ranking is a data-model
-  // patch instead of a full component rebuild.
   const lead = shortlist.slice(0, LEAD_COUNT).map((e) => cardData(e, nearMiss))
   const tail = shortlist.slice(LEAD_COUNT).map((e) => cardData(e, nearMiss))
 
-  const roots = ['heading', 'grid']
-  if (tail.length > 0) roots.push('restHeading', 'rest')
-
-  // The two templates differ only in layout, so the shared parts are built once.
-  const cardTemplate = (id: string, compact: boolean) => ({
+  // Declared once as a template and fanned out over the arrays, so re-ranking is
+  // a data-model patch instead of a full component rebuild.
+  const card = (id: string, bodyId: string, compact: boolean): A2uiComponent => ({
     id,
     component: 'CarCard',
     title: { path: 'title' },
@@ -185,74 +247,35 @@ export function buildCatalogueSurface(
     tags: { path: 'tags' },
     selected: { path: 'selected' },
     compact,
-    child: compact ? 'restBody' : 'carBody',
+    child: bodyId,
     action: {
-      event: {
-        name: 'selectCar',
-        context: { listingId: { path: 'id' }, title: { path: 'title' } },
-      },
+      event: { name: 'selectCar', context: { listingId: { path: 'id' }, title: { path: 'title' } } },
     },
   })
 
   return [
     updateDataModel(SURFACES.stage, '/', {
-      // Near-misses are never called matches. The whole point of showing them is
-      // that they failed something, and a headline that says "3 matches" over
-      // three cars each captioned "misses your budget" reads as a bug.
-      //
-      // `stretched` is the softer version of the same problem: a soft budget puts
-      // over-budget cars on the ranked list deliberately, so the count of real
-      // matches is the count that clears everything, not the length of the list.
-      headline: nearMiss
-        ? 'Nothing cleared every condition — closest first'
-        : stretched >= shortlist.length
-          ? `Nothing matches everything — closest ${shortlist.length}, ranked`
-          : stretched > 0
-            ? `${shortlist.length - stretched} matching, then ${stretched} that stretch your spec`
-            : shortlist.length === 1
-              ? '1 match'
-              : `${shortlist.length} matches, ranked`,
-      restHeadline: nearMiss
-        ? 'Further off'
-        : tail.length === 1
-          ? '1 more worth a look'
-          : `${tail.length} more worth a look`,
+      headline: headline(shortlist.length, nearMiss, stretched),
+      restHeadline: nearMiss ? 'Further off' : `${tail.length} more worth a look`,
       cars: lead,
       rest: tail,
     }),
     updateComponents(SURFACES.stage, [
-      column('root', roots),
+      column('root', tail.length > 0 ? ['heading', 'grid', 'restHeading', 'rest'] : ['heading', 'grid']),
       text('heading', { path: '/headline' }, 'h4'),
-      // Templated fan-out. Bindings inside the template are relative and carry
-      // no './' prefix — that would resolve to a broken pointer.
-      { id: 'grid', component: 'Column', children: { componentId: 'carRow', path: '/cars' } },
-      cardTemplate('carRow', false),
+
+      templated('grid', 'carRow', '/cars'),
+      card('carRow', 'carBody', false),
       column('carBody', ['carMeta', 'carWhy']),
-      row('carMeta', ['carScore', 'carPrice'], { justify: 'spaceBetween', align: 'center' }),
-      { id: 'carScore', component: 'MatchScore', score: { path: 'score' }, label: 'match' },
-      {
-        id: 'carPrice',
-        component: 'PriceBadge',
-        amount: { path: 'price' },
-        currency: CURRENCY_SYMBOL,
-        period: { path: 'period' },
-      },
+      ...metaRow('car'),
       // The rationale is structural, not decorative — it is what makes this a
       // recommendation rather than a listings page.
       { id: 'carWhy', component: 'ReasoningStep', title: { path: 'rationale' }, status: 'done' },
 
       text('restHeading', { path: '/restHeadline' }, 'h5'),
-      { id: 'rest', component: 'Column', children: { componentId: 'restRow', path: '/rest' } },
-      cardTemplate('restRow', true),
-      row('restBody', ['restScore', 'restPrice'], { justify: 'spaceBetween', align: 'center' }),
-      { id: 'restScore', component: 'MatchScore', score: { path: 'score' }, label: 'match' },
-      {
-        id: 'restPrice',
-        component: 'PriceBadge',
-        amount: { path: 'price' },
-        currency: CURRENCY_SYMBOL,
-        period: { path: 'period' },
-      },
+      templated('rest', 'restRow', '/rest'),
+      card('restRow', 'restMeta', true),
+      ...metaRow('rest'),
     ]),
   ]
 }
@@ -268,43 +291,28 @@ export function buildCatalogueSurface(
 export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
   const { listing, score, rationale, factors } = entry
   const rental = isRental(listing)
+  const spec = (label: string, value: string) => ({ label, value, filled: true })
 
-  const specs: { label: string; value: string; filled: boolean }[] = [
-    { label: 'Category', value: listing.category.toUpperCase(), filled: true },
-    { label: 'Year', value: String(listing.year), filled: true },
-    { label: 'Fuel', value: listing.fuel, filled: true },
-    { label: 'Gearbox', value: listing.transmission, filled: true },
-    { label: 'Seats', value: String(listing.seats), filled: true },
-    { label: 'Doors', value: String(listing.doors), filled: true },
-    { label: 'Boot', value: `${listing.bootLitres} L · ${listing.bags} bags`, filled: true },
-    {
-      label: 'Consumption',
-      value: `${listing.consumption} ${listing.fuel === 'electric' ? 'kWh' : 'L'}/100km`,
-      filled: true,
-    },
-    { label: 'CO₂', value: `${listing.co2} g/km`, filled: true },
-    { label: 'Colour', value: listing.colour, filled: true },
-    { label: 'Location', value: listing.location, filled: true },
-    {
-      label: 'Rating',
-      value: `${listing.rating} from ${listing.reviewCount} reviews`,
-      filled: true,
-    },
+  const specs = [
+    spec('Category', listing.category.toUpperCase()),
+    spec('Year', String(listing.year)),
+    spec('Fuel', listing.fuel),
+    spec('Gearbox', listing.transmission),
+    spec('Seats', String(listing.seats)),
+    spec('Doors', String(listing.doors)),
+    spec('Boot', `${listing.bootLitres} L · ${listing.bags} bags`),
+    spec('Consumption', `${listing.consumption} ${listing.fuel === 'electric' ? 'kWh' : 'L'}/100km`),
+    spec('CO₂', `${listing.co2} g/km`),
+    spec('Colour', listing.colour),
+    spec('Location', listing.location),
+    spec('Rating', `${listing.rating} from ${listing.reviewCount} reviews`),
     rental
-      ? { label: 'Rate', value: `${money(listing.monthlyRate)}/month`, filled: true }
-      : { label: 'Price', value: money(listing.price), filled: true },
+      ? spec('Rate', `${money(listing.monthlyRate)}/month`)
+      : spec('Price', money(listing.price)),
     rental
-      ? { label: 'Minimum hire', value: `${listing.minRentalDays} days`, filled: true }
-      : { label: 'Mileage', value: `${listing.mileageKm.toLocaleString('en-IE')} km`, filled: true },
+      ? spec('Minimum hire', `${listing.minRentalDays} days`)
+      : spec('Mileage', `${listing.mileageKm.toLocaleString('en-IE')} km`),
   ]
-
-  // Signed so the trade-offs read as trade-offs — a card that only ever lists
-  // what a car is good at is marketing, not a recommendation.
-  const scoreRows = factors.map((f) => ({
-    label: f.label,
-    value: `${f.delta >= 0 ? '+' : ''}${Math.round(f.delta)} · ${f.detail}`,
-    filled: true,
-  }))
 
   return [
     updateDataModel(SURFACES.stage, '/', {
@@ -325,21 +333,31 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
         rationale,
       },
       specs,
-      scoreRows,
+      // Signed so the trade-offs read as trade-offs — a card that only lists what
+      // a car is good at is marketing, not a recommendation.
+      scoreRows: factors.map((f) => ({
+        label: f.label,
+        value: `${f.delta >= 0 ? '+' : ''}${Math.round(f.delta)} · ${f.detail}`,
+        filled: true,
+      })),
     }),
     updateComponents(SURFACES.stage, [
-      column('root', ['backRow', 'hero', 'whyHeading', 'why', 'specHeading', 'specs', 'scoreHeading', 'scores', 'bookBtn']),
+      column('root', [
+        'backRow',
+        'hero',
+        'whyHeading',
+        'why',
+        'specHeading',
+        'specs',
+        'scoreHeading',
+        'scores',
+        'bookBtn',
+      ]),
       // A Column stretches its children, which turns a back link into a
-      // full-width button competing with the booking CTA. The Row lets it
-      // shrink to its own content.
+      // full-width button competing with the booking CTA. The Row lets it shrink
+      // to its own content.
       row('backRow', ['backBtn'], { justify: 'start' }),
-      {
-        id: 'backBtn',
-        component: 'Button',
-        child: 'backLabel',
-        variant: 'borderless',
-        action: { event: { name: 'backToResults', context: {} } },
-      },
+      button('backBtn', 'backLabel', 'backToResults', 'borderless'),
       text('backLabel', '← All matches'),
       {
         id: 'hero',
@@ -351,71 +369,40 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
         selected: true,
         child: 'heroMeta',
       },
-      row('heroMeta', ['heroScore', 'heroPrice'], { justify: 'spaceBetween', align: 'center' }),
-      { id: 'heroScore', component: 'MatchScore', score: { path: '/car/score' }, label: 'match' },
-      {
-        id: 'heroPrice',
-        component: 'PriceBadge',
-        amount: { path: '/car/price' },
-        currency: CURRENCY_SYMBOL,
-        period: { path: '/car/period' },
-      },
+      ...metaRow('hero', '/car/'),
       text('whyHeading', 'Why it placed here', 'h5'),
       { id: 'why', component: 'ReasoningStep', title: { path: '/car/rationale' }, status: 'done' },
       text('specHeading', 'Specification', 'h5'),
-      { id: 'specs', component: 'Column', children: { componentId: 'specLine', path: '/specs' } },
-      {
-        id: 'specLine',
-        component: 'SpecRow',
-        label: { path: 'label' },
-        value: { path: 'value' },
-        filled: { path: 'filled' },
-      },
+      templated('specs', 'specLine', '/specs'),
+      readOnlyRow('specLine'),
       text('scoreHeading', 'How it scored', 'h5'),
-      { id: 'scores', component: 'Column', children: { componentId: 'scoreLine', path: '/scoreRows' } },
-      {
-        id: 'scoreLine',
-        component: 'SpecRow',
-        label: { path: 'label' },
-        value: { path: 'value' },
-        filled: { path: 'filled' },
-      },
-      {
-        id: 'bookBtn',
-        component: 'Button',
-        child: 'bookLabel',
-        variant: 'primary',
-        action: { event: { name: 'bookCar', context: { listingId: listing.id } } },
-      },
+      templated('scores', 'scoreLine', '/scoreRows'),
+      readOnlyRow('scoreLine'),
+      button('bookBtn', 'bookLabel', 'bookCar', 'primary', { listingId: listing.id }),
       text('bookLabel', rental ? 'Book this car' : 'Reserve this car'),
     ]),
   ]
 }
 
+/* --------------------------------------------------------------- interview */
+
 /**
  * The interview, as one form.
  *
- * It used to be a wizard: one question on screen, a Continue under it, eleven
- * times. Every answer cost a tap on the control and a tap on Continue, and the
- * only way to revise question three was to walk back through the four after it
- * — which is why "back" had to exist at all.
+ * Everything is on screen at once rather than one question at a time behind a
+ * Continue button. The rows are the same `SpecRow`s the drawer edits, built from
+ * the same `specSheet`, so revising is re-picking a row rather than navigating,
+ * and the sheet you approve is literally the sheet you filled.
  *
- * Everything is on screen at once instead. The rows are the same `SpecRow`s the
- * drawer edits, built from the same `specSheet`, so a value means exactly what
- * it meant when it was asked one at a time, and the sheet you approve is
- * literally the sheet you filled. Revising is re-picking a row rather than
- * navigating, and the whole interview costs one click to submit.
- *
- * Mode-dependent rows come out of `specSheet` already resolved — the mileage row
- * for buying, the return date for renting — so switching rent to buy re-renders
- * the form with the right questions rather than branching here.
+ * Mode-dependent rows come out of `specSheet` already resolved — mileage for
+ * buying, the return date for renting — so switching rent to buy re-renders the
+ * form with the right questions rather than branching here.
  */
 export function interviewFormData(state: SessionState): A2uiMessage[] {
-  const buying = state.preferences.mode === 'buy'
   return [
     updateDataModel(SURFACES.interview, '/', {
       rows: specSheet(state.preferences),
-      searchLabel: buying ? 'Search cars for sale' : 'Search rentals',
+      searchLabel: state.preferences.mode === 'buy' ? 'Search cars for sale' : 'Search rentals',
     }),
   ]
 }
@@ -433,40 +420,9 @@ export function buildInterviewFormSurface(state: SessionState): A2uiMessage[] {
     updateComponents(SURFACES.interview, [
       column('root', ['lead', 'sheet', 'search', 'note']),
       text('lead', 'Fill in what matters and leave the rest — every line is optional.', 'caption'),
-      { id: 'sheet', component: 'Column', children: { componentId: 'formRow', path: '/rows' } },
-      {
-        id: 'formRow',
-        component: 'SpecRow',
-        label: { path: 'label' },
-        value: { path: 'value' },
-        filled: { path: 'filled' },
-        questionId: { path: 'questionId' },
-        control: { path: 'control' },
-        options: { path: 'options' },
-        editValue: { path: 'editValue' },
-        min: { path: 'min' },
-        max: { path: 'max' },
-        step: { path: 'step' },
-        unit: { path: 'unit' },
-        // Only the form is a grid, so only the form asks for the span. The
-        // drawer's sheet is one narrow column and ignores it.
-        wide: { path: 'wide' },
-        // Same contract as the drawer: the row writes its new value into the
-        // model first, and the action reads it back at dispatch time.
-        action: {
-          event: {
-            name: 'editSpec',
-            context: { questionId: { path: 'questionId' }, value: { path: 'editValue' } },
-          },
-        },
-      },
-      {
-        id: 'search',
-        component: 'Button',
-        child: 'searchLabel',
-        variant: 'primary',
-        action: { event: { name: 'confirmSpec', context: {} } },
-      },
+      templated('sheet', 'formRow', '/rows'),
+      editableRow('formRow', true),
+      button('search', 'searchLabel', 'confirmSpec', 'primary'),
       text('searchLabel', { path: '/searchLabel' }),
       text('note', 'You can change any of this after the results come back.', 'caption'),
     ]),
