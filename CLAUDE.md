@@ -45,13 +45,45 @@ TypeScript everywhere, ESM, Node 22, npm workspaces.
 ```
 apps/
   web/              React + Vite — chat, A2UI renderer, MCP Apps host
-  api/              Express + Claude Agent SDK — agent loop, session state, SSE
+  api/              Express + Agents SDK — the flow, session state, SSE
   mcp-marketplace/  MCP server — listing tools + ui:// MCP Apps
 packages/
-  shared/           shared types, A2UI message builders
+  shared/           shared types, criteria evaluation
   catalog/          mock marketplace data + deterministic generator
+  ranking/          the deterministic scorer and its rationales
 specs/              spec-driven development artefacts
 ```
+
+Inside `apps/api/src`:
+
+```
+server.ts       routes only
+session.ts      the session store and the TurnContext a driver gets
+questions.ts    the interview plan and the spec sheet it renders as
+flow/           the journey, one file per step of the pipeline
+  criteria.ts     preferences → criteria (pure, derived at point of use)
+  search.ts       marketplace fetch + screening
+  rank.ts         scorer, then model — the ONLY model/fallback branch
+  present.ts      surfaces and copy
+  spec.ts         editing a spec row
+  booking.ts      MCP App booking and checkout
+drivers/        index.ts holds the shared control handling; scripted.ts and
+                agent.ts differ only in what they do with typed text
+agents/         the model-facing parts: provider, ranker, conversational tools
+```
+
+### Rules that keep the flow followable
+
+- **Criteria are derived, never stored-and-edited.** `buildCriteria(prefs)` is
+  pure; the search calls it. Never add a second place that mutates
+  `state.criteria`.
+- **Only `flow/rank.ts` knows the model can fail.** A model-backed ranker
+  reorders or returns `undefined`. It must not choose a fallback, set
+  `rankedBy`, or trim the shortlist.
+- **A driver only handles typed text.** Anything a rendered control fires goes in
+  `drivers/index.ts`, once, for both drivers.
+- **Counts and money are ours, never the model's.** It supplies judgement; the
+  arithmetic in the copy comes from `flow/present.ts`.
 
 ## The two UI protocols
 

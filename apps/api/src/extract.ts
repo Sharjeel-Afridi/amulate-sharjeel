@@ -1,13 +1,11 @@
-import { CATEGORIES, type Category, type Mode, type Preferences, money, moneyPerMonth } from '@car/shared'
+import { CATEGORIES, type Category, type Mode, type Preferences } from '@car/shared'
 
 /**
- * Best-effort preference extraction from free text.
+ * Best-effort preference extraction from free text — the scripted driver's
+ * answer to a typed message, where the model-backed one calls a tool.
  *
- * The scripted driver uses this to feel genuinely responsive to what the user
- * typed rather than replaying a fixed script regardless of input. The real agent
- * does this far better with the model, but keeping a deterministic extractor
- * around is useful: it makes the fallback demo coherent, and it gives us a cheap
- * sanity check on what the model extracts.
+ * Deliberately conservative: it would rather extract nothing than write a wrong
+ * value over a right one, because the user cannot see it happen.
  */
 
 const CATEGORY_SYNONYMS: Record<Category, string[]> = {
@@ -155,23 +153,4 @@ export function extractPreferences(
   }
 
   return patch
-}
-
-/** Human-readable spec line the agent states back before searching. */
-export function describeSpec(prefs: Preferences): string {
-  const parts: string[] = []
-  parts.push(prefs.mode === 'buy' ? 'buying' : 'renting')
-  if (prefs.category) parts.push(`a ${prefs.category}`)
-  if (prefs.budgetMax) {
-    parts.push(
-      prefs.mode === 'buy'
-        ? `up to ${money(prefs.budgetMax)}`
-        : `up to ${moneyPerMonth(prefs.budgetMax)}`,
-    )
-  }
-  if (prefs.targetDate) parts.push(`from ${prefs.targetDate}`)
-  if (prefs.seatsMin && prefs.seatsMin > 5) parts.push(`${prefs.seatsMin} seats`)
-  if (prefs.bootLitresMin) parts.push(`boot over ${prefs.bootLitresMin} L`)
-  if (prefs.fuel) parts.push(String(prefs.fuel))
-  return parts.join(', ')
 }

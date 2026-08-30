@@ -66,7 +66,7 @@ demo, that is the recovery: no restart, no lost state.
 Flipping to **Scripted** also turns on a guided highlight: every control the
 deterministic driver handles gets a ring, including the primary button inside
 the booking widget's sandboxed iframe. Whoever is presenting can see the path
-without having read `scripted-driver.ts`. The banner that announces scripted
+without having read `drivers/scripted.ts`. The banner that announces scripted
 mode links straight to the switch, so the recovery is never something you have
 to go looking for. Typing still works in scripted mode, but it is
 pattern-matched rather than understood, so the highlighted controls are the
@@ -94,9 +94,10 @@ Provider-agnostic: the harness is the **OpenAI Agents SDK**, which talks to any
 OpenAI-compatible endpoint, so Gemini and Groq free tiers work by changing a
 base URL. Set `AGENT_BASE_URL` for anything else.
 
-Both drivers implement the same `AgentDriver` interface, call the same MCP
-tools, mutate the same session state and emit the same A2UI surfaces — only the
-choice of what to say next differs. A missing key **falls back rather than
+Both drivers implement the same `Driver` interface and run the same
+`flow/` pipeline — same MCP tools, same session state, same A2UI surfaces. A
+driver answers exactly one question: what to do with a message the user *typed*.
+Every tapped control is handled identically for both by `drivers/index.ts`. A missing key **falls back rather than
 failing**: an app that boots and works beats one that refuses to start over an
 optional key.
 
@@ -154,6 +155,37 @@ web (React 19 + Vite)          api (Express)                     mcp-marketplace
      :5173                            :8080                      └─ ui:// checkout
                                                                        :8081
 ```
+
+### How a search flows
+
+Everything the API does to answer a search lives in `apps/api/src/flow/`, one
+file per step, in the order they run:
+
+```
+preferences ──► criteria.ts ──► search.ts ──► rank.ts ──► present.ts
+ (the only        buildCriteria    marketplace   scorer,       surfaces
+  spec state)     (pure, derived)  + screen      then model     + copy
+                                       │             │
+                                       │             └─ model unavailable, throttled,
+                                       │                slow or unparseable
+                                       │                     └──► scorer's order stands
+                                       └─ nothing qualified ──► nearMisses()
+```
+
+`flow/index.ts` is the whole pipeline in one readable function. Two rules keep it
+followable:
+
+- **Criteria are derived, never stored-and-edited.** `buildCriteria(prefs)` is
+  pure and idempotent, called by the search itself. There is no path where a
+  preference is recorded but the criterion it implies is not applied.
+- **One place branches on the model.** `flow/rank.ts` is the only file that knows
+  the model can fail. `agents/ranker.ts` reorders a list or returns `undefined`;
+  it never picks a fallback, never sets `rankedBy`, never trims the shortlist.
+  The scorer runs on *every* path — it supplies the factor trace the detail view
+  expands, and its order is the answer when the model does not have one.
+
+`rankedBy` is recorded on the trace, because the degradation is invisible in the
+product: the user still gets eight ranked cars with rationales either way.
 
 ### The two UI protocols
 

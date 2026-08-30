@@ -15,9 +15,6 @@
 
 export const A2UI_VERSION = 'v0.9' as const
 
-/** The standard component set. */
-export const BASIC_CATALOG = 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json'
-
 /**
  * Our catalog: the basic set merged with `CarCard`, `MatchScore`, `PriceBadge`
  * and `ReasoningStep`. A surface resolves exactly one catalog by exact id match,
@@ -56,16 +53,10 @@ export interface UpdateDataModelMessage {
   updateDataModel: { surfaceId: string; path?: string; value?: unknown }
 }
 
-export interface DeleteSurfaceMessage {
-  version: typeof A2UI_VERSION
-  deleteSurface: { surfaceId: string }
-}
-
 export type A2uiMessage =
   | CreateSurfaceMessage
   | UpdateComponentsMessage
   | UpdateDataModelMessage
-  | DeleteSurfaceMessage
 
 /** The surfaces this app drives. One per zone of the cockpit. */
 export const SURFACES = {
@@ -79,10 +70,7 @@ export const SURFACES = {
 
 export type SurfaceId = (typeof SURFACES)[keyof typeof SURFACES]
 
-export function createSurface(
-  surfaceId: SurfaceId,
-  catalogId: string = BASIC_CATALOG,
-): CreateSurfaceMessage {
+export function createSurface(surfaceId: SurfaceId, catalogId: string): CreateSurfaceMessage {
   return { version: A2UI_VERSION, createSurface: { surfaceId, catalogId } }
 }
 
@@ -105,10 +93,6 @@ export function updateDataModel(
   return { version: A2UI_VERSION, updateDataModel: { surfaceId, path, value } }
 }
 
-export function deleteSurface(surfaceId: SurfaceId): DeleteSurfaceMessage {
-  return { version: A2UI_VERSION, deleteSurface: { surfaceId } }
-}
-
 // --------------------------------------------------------------- components
 
 export const text = (
@@ -128,76 +112,3 @@ export const row = (
   children: string[],
   extra: Record<string, unknown> = {},
 ): A2uiComponent => ({ id, component: 'Row', children, ...extra })
-
-export const list = (
-  id: string,
-  children: string[],
-  direction: 'vertical' | 'horizontal' = 'vertical',
-): A2uiComponent => ({ id, component: 'List', children, direction })
-
-export const card = (id: string, child: string): A2uiComponent => ({
-  id,
-  component: 'Card',
-  child,
-})
-
-export const image = (
-  id: string,
-  url: Dynamic<string>,
-  description?: string,
-): A2uiComponent => ({ id, component: 'Image', url, description, fit: 'contain' })
-
-export const divider = (id: string): A2uiComponent => ({ id, component: 'Divider' })
-
-export const button = (
-  id: string,
-  child: string,
-  action: Record<string, unknown>,
-  variant: 'default' | 'primary' | 'borderless' = 'default',
-): A2uiComponent => ({ id, component: 'Button', child, action, variant })
-
-/** Multi- or single-select chips — the interview's main input. */
-export const choicePicker = (
-  id: string,
-  label: string,
-  options: { label: string; value: string }[],
-  value: Dynamic<string[]>,
-  variant: 'mutuallyExclusive' | 'multipleSelection' = 'mutuallyExclusive',
-): A2uiComponent => ({
-  id,
-  component: 'ChoicePicker',
-  label,
-  options,
-  value,
-  variant,
-  displayStyle: 'chips',
-})
-
-export const slider = (
-  id: string,
-  label: string,
-  max: number,
-  value: Dynamic<number>,
-  min = 0,
-): A2uiComponent => ({ id, component: 'Slider', label, min, max, value })
-
-export const dateTimeInput = (
-  id: string,
-  label: string,
-  value: Dynamic<string>,
-  min?: string,
-): A2uiComponent => ({
-  id,
-  component: 'DateTimeInput',
-  label,
-  value,
-  enableDate: true,
-  enableTime: false,
-  min,
-})
-
-export const textField = (
-  id: string,
-  label: string,
-  value: Dynamic<string>,
-): A2uiComponent => ({ id, component: 'TextField', label, value, variant: 'shortText' })
