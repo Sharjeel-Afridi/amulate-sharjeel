@@ -210,7 +210,12 @@ app.get('/api/session/:id/stream', (req, res) => {
   res.write(sseFrame({ type: 'a2ui', messages: initSurfaces() }))
   // Replay the catalogue so a reconnect doesn't land on an empty stage.
   if (state.shortlist.length > 0) {
-    res.write(sseFrame({ type: 'a2ui', messages: buildCatalogueSurface(state.shortlist) }))
+    res.write(
+      sseFrame({
+        type: 'a2ui',
+        messages: buildCatalogueSurface(state.shortlist, { criteria: state.criteria }),
+      }),
+    )
   }
   res.write(sseFrame({ type: 'a2ui', messages: buildJourneySurface(state) }))
 

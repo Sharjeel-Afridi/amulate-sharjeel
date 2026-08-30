@@ -62,7 +62,9 @@ export function showNearMisses(
     'Nothing cleared every condition',
     near.length ? `Showing the ${near.length} closest, with what each one misses` : undefined,
   )
-  if (near.length > 0) ctx.a2ui(buildCatalogueSurface(near, { nearMiss: true }))
+  if (near.length > 0) {
+    ctx.a2ui(buildCatalogueSurface(near, { nearMiss: true, criteria: screening.criteria }))
+  }
   if (narrate) ctx.say(nearMissCopy(screening, near.length))
 }
 
@@ -103,7 +105,7 @@ export function showResults(
         ? `${shortlist.length} cars, each scored and explained`
         : undefined,
   )
-  ctx.a2ui(buildCatalogueSurface(shortlist, { stretched }))
+  ctx.a2ui(buildCatalogueSurface(shortlist, { stretched, criteria: screening.criteria }))
 
   if (!narrate) return
   const lead = resultsLead(shortlist.length, stretched, screening.ruledOut.length)
@@ -154,10 +156,10 @@ export function showCarDetail(ctx: TurnContext, listingId: string): boolean {
   const entry = ctx.state.shortlist.find((r) => r.listing.id === listingId)
   if (!entry) return false
 
-  ctx.a2ui(buildCarDetailSurface(entry))
+  ctx.a2ui(buildCarDetailSurface(entry, ctx.state.criteria, ctx.state.preferences))
   ctx.step(
     `Opened ${entry.listing.brand} ${entry.listing.model}`,
-    'Full spec and scoring on the stage',
+    'Your criteria checked against it, scoring, and the full spec',
   )
   return true
 }
@@ -168,5 +170,5 @@ export function showCatalogue(ctx: TurnContext): void {
   // with the stage — but only from 'book'. 'done' means the (mock) payment
   // settled, and a settled booking is final.
   if (ctx.state.phase === 'book') ctx.setPhase('recommend')
-  ctx.a2ui(buildCatalogueSurface(ctx.state.shortlist))
+  ctx.a2ui(buildCatalogueSurface(ctx.state.shortlist, { criteria: ctx.state.criteria }))
 }
