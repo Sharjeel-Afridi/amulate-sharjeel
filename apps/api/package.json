@@ -8,7 +8,8 @@
     "start": "tsx src/main.ts",
     "smoke": "tsx src/smoke.ts",
     "eval": "tsx src/evals/run.ts",
-    "eval:judge": "tsx src/evals/judge-check.ts"
+    "eval:judge": "tsx src/evals/judge-check.ts",
+    "sim": "tsx src/sim-adaptive.ts"
   },
   "dependencies": {
     "@car/catalog": "*",

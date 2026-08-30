@@ -259,6 +259,10 @@ const PRECONDITION: Record<string, (p: Preferences) => boolean> = {
   returnDate: (p) => p.mode !== 'buy',
 }
 
+/** Whether the slot a question fills already holds an answer. */
+export const isSlotFilled = (id: string, prefs: Preferences): boolean =>
+  FILLED[id]?.(prefs) ?? false
+
 /**
  * The auction-facing projection of the interview. Wording and controls stay in
  * `QUESTIONS`; this hands the engine only what it needs to price each one.

@@ -11,7 +11,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
-import { specSheet } from './questions.js'
+import { type Question, specSheet } from './questions.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -380,6 +380,185 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
       readOnlyRow('scoreLine'),
       button('bookBtn', 'bookLabel', 'bookCar', 'primary', { listingId: listing.id }),
       text('bookLabel', rental ? 'Book this car' : 'Reserve this car'),
+    ]),
+  ]
+}
+
+/* ------------------------------------------------------ adaptive interview */
+
+/** Everything the one-question card needs to know beyond the question itself. */
+export interface AdaptiveQuestionInfo {
+  /** Cars currently passing every hard criterion — the narrowing counter. */
+  pool: number
+  /** 1-based "Question N" position. */
+  index: number
+  /** Multi-select picks accumulated so far, before Done commits them. */
+  draft: string[]
+  renting: boolean
+  skippable: boolean
+  /** Whether "show matches now" is worth offering yet. */
+  searchable: boolean
+}
+
+/** Option buttons, paired into rows once the list gets tall. */
+function optionGrid(
+  options: { label: string; value: string }[],
+  make: (opt: { label: string; value: string }, i: number) => [A2uiComponent, A2uiComponent],
+): { rootIds: string[]; components: A2uiComponent[] } {
+  const components: A2uiComponent[] = []
+  const ids: string[] = []
+  for (const [i, opt] of options.entries()) {
+    const [btn, label] = make(opt, i)
+    components.push({ ...btn, weight: 1 }, label)
+    ids.push(String(btn.id))
+  }
+  if (options.length <= 4) return { rootIds: ids, components }
+
+  const rowIds: string[] = []
+  for (let i = 0; i < ids.length; i += 2) {
+    const rowId = `qOptRow${i / 2}`
+    rowIds.push(rowId)
+    components.push(row(rowId, ids.slice(i, i + 2), { align: 'stretch' }))
+  }
+  return { rootIds: rowIds, components }
+}
+
+/**
+ * The adaptive interview's one-question card.
+ *
+ * Everything is a tap: chip questions render as real buttons, the budget
+ * slider as quick-pick bands off the same values the auction simulates, and
+ * multi-selects as toggles committed by one Done. Free text falls back to the
+ * SpecRow input. The pool counter at the top is the reward loop — every answer
+ * visibly narrows the pool, which is what keeps people answering.
+ */
+export function buildAdaptiveQuestionSurface(
+  question: Question,
+  info: AdaptiveQuestionInfo,
+): A2uiMessage[] {
+  const components: A2uiComponent[] = []
+  const bodyIds: string[] = []
+  const answerAction = (value: string) => ({
+    event: { name: 'answerQuestion', context: { questionId: question.id, value } },
+  })
+
+  const optionButton = (
+    opt: { label: string; value: string },
+    i: number,
+    selected = false,
+    toggle = false,
+  ): [A2uiComponent, A2uiComponent] => [
+    {
+      id: `qOpt${i}`,
+      component: 'Button',
+      child: `qOpt${i}Label`,
+      variant: selected ? 'primary' : 'default',
+      action: toggle
+        ? { event: { name: 'toggleAnswer', context: { questionId: question.id, value: opt.value } } }
+        : answerAction(opt.value),
+    },
+    text(`qOpt${i}Label`, opt.label),
+  ]
+
+  switch (question.control) {
+    case 'chips': {
+      const grid = optionGrid(question.options ?? [], (opt, i) => optionButton(opt, i))
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      break
+    }
+    case 'slider': {
+      // The quick-pick bands are the auction's own simulated answers — the
+      // question is priced on exactly the values it offers.
+      const bands = (question.simValues ?? []).map((v) => ({
+        label: `Up to ${money(Number(v))}${info.renting ? '/mo' : ''}`,
+        value: String(v),
+      }))
+      const grid = optionGrid(bands, (opt, i) => optionButton(opt, i))
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      break
+    }
+    case 'multi': {
+      const grid = optionGrid(question.options ?? [], (opt, i) =>
+        optionButton(opt, i, info.draft.includes(opt.value), true),
+      )
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      components.push(
+        {
+          id: 'qDone',
+          component: 'Button',
+          child: 'qDoneLabel',
+          variant: 'primary',
+          action: { event: { name: 'submitAnswer', context: { questionId: question.id } } },
+        },
+        text(
+          'qDoneLabel',
+          info.draft.length > 0 ? `Done — ${info.draft.length} picked` : 'None of these',
+        ),
+      )
+      bodyIds.push('qDone')
+      break
+    }
+    default: {
+      // Free text (and any future control) rides the same SpecRow the form
+      // uses, pointed at answerQuestion instead of editSpec.
+      components.push({
+        id: 'qInput',
+        component: 'SpecRow',
+        label: '',
+        value: { path: '/q/value' },
+        filled: { path: '/q/filled' },
+        questionId: { path: '/q/questionId' },
+        control: { path: '/q/control' },
+        options: { path: '/q/options' },
+        editValue: { path: '/q/editValue' },
+        min: question.min ?? 0,
+        max: question.max ?? 0,
+        step: question.step ?? 1,
+        unit: question.unit ?? '',
+        action: {
+          event: {
+            name: 'answerQuestion',
+            context: { questionId: { path: '/q/questionId' }, value: { path: '/q/editValue' } },
+          },
+        },
+      })
+      bodyIds.push('qInput')
+    }
+  }
+
+  const footerIds: string[] = []
+  if (info.skippable) {
+    components.push(button('qSkip', 'qSkipLabel', 'skipQuestion', 'borderless', { questionId: question.id }))
+    components.push(text('qSkipLabel', 'Skip this one'))
+    footerIds.push('qSkip')
+  }
+  if (info.searchable) {
+    components.push(button('qSearchNow', 'qSearchNowLabel', 'confirmSpec', 'borderless'))
+    components.push(text('qSearchNowLabel', 'Show me the matches now'))
+    footerIds.push('qSearchNow')
+  }
+  if (footerIds.length > 0) components.push(row('qFooter', footerIds, { justify: 'start' }))
+
+  return [
+    updateDataModel(SURFACES.interview, '/', {
+      progress: `Question ${info.index} · ${info.pool} cars in play`,
+      q: {
+        questionId: question.id,
+        control: question.control,
+        options: question.options ?? [],
+        value: '',
+        editValue: '',
+        filled: false,
+      },
+    }),
+    updateComponents(SURFACES.interview, [
+      column('root', ['qProgress', 'qAsk', ...bodyIds, ...(footerIds.length ? ['qFooter'] : [])]),
+      text('qProgress', { path: '/progress' }, 'caption'),
+      text('qAsk', question.ask, 'h5'),
+      ...components,
     ]),
   ]
 }
