@@ -109,6 +109,20 @@ export function assessQuestion(
   }
 }
 
+/** The questions whose slots are non-negotiable and still unresolved. */
+export function pendingRequired(bank: BankQuestion[], prefs: Preferences, asked: string[]): string[] {
+  const askedSet = new Set(asked)
+  return bank
+    .filter(
+      (q) =>
+        q.required &&
+        !askedSet.has(q.id) &&
+        (q.precondition?.(prefs) ?? true) &&
+        !(q.filled?.(prefs) ?? false),
+    )
+    .map((q) => q.id)
+}
+
 /**
  * Runs the auction. Null means nothing left is worth asking — the caller's cue
  * to stop and recommend, not an error.
@@ -130,7 +144,14 @@ export function runAuction(input: AuctionInput, cfg: EngineConfig = DEFAULT_CONF
     .sort((a, b) => b.value - a.value || (a.id < b.id ? -1 : 1))
 
   const best = considered[0]!
-  if (best.value < cfg.minValue) return null
+  if (best.value < cfg.minValue) {
+    // Nothing clears the bar, but a required slot may not be skipped over by
+    // the pricing: ask the best of the unresolved required questions anyway.
+    // Deterministic, so the propensity is honestly 1.
+    const forced = considered.find((a) => pendingRequired(bank, prefs, asked).includes(a.id))
+    if (!forced) return null
+    return { questionId: forced.id, propensity: 1, nearTies: [forced.id], considered }
+  }
 
   // Near-ties are broken at random on purpose: the controlled wobble is what
   // makes "would question B have done better?" answerable from logs later.

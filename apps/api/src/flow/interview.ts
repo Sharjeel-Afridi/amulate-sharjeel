@@ -7,6 +7,7 @@ import {
   type PoolEvaluation,
   type StopReason,
   confidence,
+  pendingRequired,
   runAuction,
   shouldStop,
 } from '@car/question-engine'
@@ -121,8 +122,9 @@ export function decideNext(ctx: TurnContext): InterviewDecision {
     if (question) return present(question, null)
   }
 
+  const bank = questionBank()
   const auction = runAuction({
-    bank: questionBank(),
+    bank,
     prefs,
     asked,
     apply: applySim,
@@ -134,6 +136,9 @@ export function decideNext(ctx: TurnContext): InterviewDecision {
     margin: conf.margin,
     poolSize: pool.qualified,
     bestValue: auction ? (auction.considered[0]?.value ?? null) : null,
+    // Budget and seats must be answered or skipped before a stop can claim
+    // confidence — a clear leader of an unstated spec is not a recommendation.
+    requiredPending: pendingRequired(bank, prefs, asked).length,
   })
   if (reason) return { kind: 'stop', reason, pool, conf }
 

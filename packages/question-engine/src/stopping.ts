@@ -21,12 +21,19 @@ export interface StopInput {
   poolSize: number
   /** Best remaining auction value, or null when no question is eligible. */
   bestValue: number | null
+  /**
+   * Required slots still unresolved — see `BankQuestion.required`. While any
+   * remain, "confident" is not a claim the interview is allowed to make: the
+   * margin was computed against a spec the user has not actually stated.
+   */
+  requiredPending: number
 }
 
 export function shouldStop(input: StopInput, cfg: EngineConfig = DEFAULT_CONFIG): StopReason | null {
-  const { askedCount, margin, poolSize, bestValue } = input
+  const { askedCount, margin, poolSize, bestValue, requiredPending } = input
 
   // Out of questions is terminal whatever the count — there is nothing to ask.
+  // (A pending required question is always eligible, so it cannot be here.)
   if (bestValue === null) return 'exhausted'
   if (askedCount >= cfg.maxQuestions) return 'cap'
 
@@ -36,6 +43,7 @@ export function shouldStop(input: StopInput, cfg: EngineConfig = DEFAULT_CONFIG)
   }
 
   if (poolSize <= cfg.tinyPool) return 'tiny-pool'
+  if (requiredPending > 0) return null
   if (margin >= cfg.confidentMargin) return 'confident'
   if (bestValue < cfg.minValue) return 'exhausted'
   return null

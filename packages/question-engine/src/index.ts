@@ -1,4 +1,4 @@
-export { assessQuestion, runAuction } from './auction.js'
+export { assessQuestion, pendingRequired, runAuction } from './auction.js'
 export type { AuctionInput, AuctionResult, QuestionAssessment } from './auction.js'
 export { choiceProbabilities, confidence } from './confidence.js'
 export type { Confidence } from './confidence.js'

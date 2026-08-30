@@ -2,7 +2,7 @@
  * Headless dry-run of the adaptive interview: walks decide → answer → decide
  * with canned answers and prints each auction's pricing, so a change to the
  * engine or the bank can be judged in one screenful without starting the app.
- * Run with `npm run sim -w @car/api` (optionally `-- rent`).
+ * Run with `npm run sim -w @car/api` (optionally `-- rent convertible`).
  */
 import { createSession, makeContext } from './session.js'
 import { decideNext, recordAnswer, recordSkip } from './flow/interview.js'
@@ -14,7 +14,7 @@ const canned: Record<string, unknown> = {
   mode: process.argv[2] ?? 'buy',
   useCase: 'city commuting, tight parking',
   passengers: '4',
-  category: 'hatchback',
+  category: process.argv[3] ?? 'hatchback',
   budgetBuy: 22000,
   budget: 2500,
   luggage: '300',

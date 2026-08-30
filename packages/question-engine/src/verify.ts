@@ -7,7 +7,7 @@
  * Exits non-zero on failure so it can gate a build.
  */
 import type { Preferences } from '@car/shared'
-import { runAuction } from './auction.js'
+import { pendingRequired, runAuction } from './auction.js'
 import { confidence } from './confidence.js'
 import { shouldStop } from './stopping.js'
 import { type BankQuestion, DEFAULT_CONFIG, type Evaluate } from './types.js'
@@ -171,7 +171,7 @@ const pinned = (value: number) => () => value
 /* ---------------------------------------------------------------- stopping */
 
 {
-  const base = { askedCount: 4, margin: 0, poolSize: 20, bestValue: 0.3 }
+  const base = { askedCount: 4, margin: 0, poolSize: 20, bestValue: 0.3, requiredPending: 0 }
   expect(shouldStop(base) === null, 'stopping: stopped with no reason to')
   expect(shouldStop({ ...base, askedCount: 1 }) === null, 'stopping: ignored the floor')
   expect(
@@ -189,6 +189,81 @@ const pinned = (value: number) => () => value
     'stopping: asked a worthless question',
   )
   expect(shouldStop({ ...base, askedCount: 8 }) === 'cap', 'stopping: blew through the cap')
+
+  // Required slots gate confidence: a clear leader of an unstated spec is not
+  // a recommendation, and "nothing worth asking" cannot be true while budget
+  // has never come up.
+  expect(
+    shouldStop({ ...base, margin: 0.9, requiredPending: 1 }) === null,
+    'stopping: called itself confident with budget unresolved',
+  )
+  expect(
+    shouldStop({ ...base, bestValue: 0.001, requiredPending: 1 }) === null,
+    'stopping: exhausted itself past an unresolved required slot',
+  )
+  expect(
+    shouldStop({ ...base, poolSize: 2, requiredPending: 1 }) === 'tiny-pool',
+    'stopping: kept interrogating a tiny pool over a required slot',
+  )
+}
+
+/* ----------------------------------------------------- required questions */
+
+{
+  // Every simulated answer leaves the pool untouched, so both questions price
+  // at zero — but budget is required, so it must be asked anyway.
+  const lowValueBank: BankQuestion[] = [
+    {
+      id: 'budget',
+      kind: 'hard',
+      cost: 1,
+      required: true,
+      answers: [{ value: 500_000, prior: 1 }],
+      filled: (p) => p.budgetMax !== undefined,
+    },
+    {
+      id: 'colour',
+      kind: 'weight',
+      cost: 1,
+      answers: ['red', 'black'].map((value) => ({ value, prior: 1 })),
+    },
+  ]
+
+  expect(
+    pendingRequired(lowValueBank, {}, []).join(',') === 'budget',
+    'required: pendingRequired missed the unresolved budget',
+  )
+  expect(
+    pendingRequired(lowValueBank, {}, ['budget']).length === 0,
+    'required: a skipped question still counted as pending',
+  )
+  expect(
+    pendingRequired(lowValueBank, { budgetMax: 20_000 }, []).length === 0,
+    'required: a filled slot still counted as pending',
+  )
+
+  const forced = runAuction({
+    bank: lowValueBank,
+    prefs: {},
+    asked: [],
+    apply,
+    evaluate,
+    random: pinned(0),
+  })
+  expect(
+    forced?.questionId === 'budget' && forced.propensity === 1,
+    'required: a zero-value budget question was not forced',
+  )
+
+  const done = runAuction({
+    bank: lowValueBank,
+    prefs: {},
+    asked: ['budget'],
+    apply,
+    evaluate,
+    random: pinned(0),
+  })
+  expect(done === null, 'required: kept asking zero-value questions with nothing pending')
 }
 
 /* ------------------------------------------------------------------ report */

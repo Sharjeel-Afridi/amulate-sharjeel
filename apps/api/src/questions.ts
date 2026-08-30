@@ -249,6 +249,14 @@ const FILLED: Record<string, (p: Preferences) => boolean> = {
   dealbreakers: (p) => p.dealbreakers !== undefined,
 }
 
+/**
+ * The spec's non-negotiables: the interview may not stop as "confident" or
+ * "exhausted" while one of these is unresolved. A recommendation made before
+ * the budget question is a claim about a spec nobody stated. Mode is not
+ * listed only because it is seeded first and so always resolved.
+ */
+const REQUIRED = new Set(['budget', 'budgetBuy', 'passengers'])
+
 /** Hard gates on what must be known first. Mode splits the bank in two. */
 const PRECONDITION: Record<string, (p: Preferences) => boolean> = {
   budget: (p) => p.mode !== 'buy',
@@ -279,6 +287,7 @@ export function questionBank(): BankQuestion[] {
       })),
       precondition: PRECONDITION[q.id],
       filled: FILLED[q.id],
+      required: REQUIRED.has(q.id),
     }))
     .filter((q) => q.answers.length > 0)
 }

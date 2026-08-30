@@ -33,6 +33,13 @@ export interface BankQuestion {
    * by the budget question.
    */
   filled?: (prefs: Preferences) => boolean
+  /**
+   * A non-negotiable: the interview may not call itself confident, or run out
+   * of things worth asking, while this slot is unresolved — unanswered and
+   * unskipped. Budget is the canonical case: a "confident" recommendation
+   * before the budget question is confidence about a spec nobody stated.
+   */
+  required?: boolean
 }
 
 export interface SimAnswer {
