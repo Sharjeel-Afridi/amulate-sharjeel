@@ -10,7 +10,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
-import { specSheet } from './interview.js'
+import { specSheet } from './questions.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -48,7 +48,7 @@ export function initSurfaces(): A2uiMessage[] {
  * showing the spec before anything is searched.
  */
 export function buildJourneySurface(state: SessionState): A2uiMessage[] {
-  const rows = specSheet(state.preferences, state.criteria)
+  const rows = specSheet(state.preferences)
 
   // Re-searching only means anything once a search has happened. Before that the
   // spec is still being assembled and "Search on this" on the interview surface
@@ -414,7 +414,7 @@ export function interviewFormData(state: SessionState): A2uiMessage[] {
   const buying = state.preferences.mode === 'buy'
   return [
     updateDataModel(SURFACES.interview, '/', {
-      rows: specSheet(state.preferences, state.criteria),
+      rows: specSheet(state.preferences),
       searchLabel: buying ? 'Search cars for sale' : 'Search rentals',
     }),
   ]

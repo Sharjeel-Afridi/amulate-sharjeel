@@ -10,6 +10,9 @@ export const PHASES: readonly Phase[] = ['interview', 'research', 'recommend', '
  * What the interview is trying to fill in. Everything is optional — the point
  * of the interview is that we start knowing nothing and the UI shows the gaps
  * closing.
+ *
+ * This is the single source of truth for the spec. `criteria` is derived from
+ * it (see `buildCriteria`), never edited alongside it.
  */
 export interface Preferences {
   mode?: Mode
@@ -31,14 +34,8 @@ export interface Preferences {
   /** Purchases only. */
   maxMileageKm?: number
   minYear?: number
-  /** Anything else worth weighting that doesn't fit a field. */
-  notes?: string[]
-}
-
-/** Which preference fields the interview still needs, by mode. */
-export const REQUIRED_FIELDS: Record<Mode, (keyof Preferences)[]> = {
-  rent: ['mode', 'useCase', 'category', 'budgetMax', 'targetDate'],
-  buy: ['mode', 'useCase', 'category', 'budgetMax', 'targetDate'],
+  /** Dealbreaker ids from the interview — 'no-diesel', 'strict-budget', … */
+  dealbreakers?: string[]
 }
 
 export interface SearchSummary {
@@ -51,26 +48,15 @@ export interface SearchSummary {
   relaxed: string[]
 }
 
-/**
- * Interview progress.
- *
- * `complete` and `confirmed` are separate on purpose: finishing the questions is
- * not permission to go searching. The user sees the assembled spec and approves
- * it first, which is their chance to correct a misheard answer before any work
- * happens.
- */
 export interface InterviewState {
   /** Question ids already answered, in order. */
   answered: string[]
-  /** The question currently on screen, if any. */
-  pending?: string
-  complete: boolean
+  /** The user has approved the spec, so searching is allowed. */
   confirmed: boolean
   /**
-   * The spec has been edited since the last search, so what is on the stage no
-   * longer answers what is on the sheet. Drives the "Search again" affordance —
-   * an edit does not re-search on its own, because changing four fields would
-   * otherwise fire four searches and leave the user watching the last one win.
+   * The spec has been edited since the last search. Drives the "Search again"
+   * affordance — an edit does not re-search on its own, because changing four
+   * fields would otherwise fire four searches.
    */
   dirty: boolean
 }
@@ -88,10 +74,6 @@ export interface Booking {
 }
 
 /**
- * Single source of truth, shared by the agent and the UI. The web client mirrors
- * this into the A2UI data model, so a patch here updates the journey rail.
- */
-/**
  * Which driver runs the conversation.
  *
  * Held per session rather than per process so it can be switched from the UI
@@ -100,6 +82,10 @@ export interface Booking {
  */
 export type DriverMode = 'scripted' | 'agent'
 
+/**
+ * Single source of truth, shared by the agent and the UI. The web client mirrors
+ * this into the A2UI data model, so a patch here updates the journey rail.
+ */
 export interface SessionState {
   sessionId: string
   /** Which driver answers this session's turns. */
@@ -107,13 +93,12 @@ export interface SessionState {
   phase: Phase
   interview: InterviewState
   preferences: Preferences
-  /** The spec: what the interview answers became. */
+  /** The criteria the last search actually applied. Derived from preferences. */
   criteria: Criterion[]
   search?: SearchSummary
   shortlist: RankedListing[]
   /** Cars a hard criterion removed, kept so the user can see what and why. */
   ruledOut: ListingAssessment[]
-  comparing: string[]
   booking?: Booking
   createdAt: string
   updatedAt: string
@@ -125,19 +110,12 @@ export function createSessionState(sessionId: string, mode: DriverMode = 'script
     sessionId,
     mode,
     phase: 'interview',
-    interview: { answered: [], complete: false, confirmed: false, dirty: false },
+    interview: { answered: [], confirmed: false, dirty: false },
     preferences: {},
     criteria: [],
     shortlist: [],
     ruledOut: [],
-    comparing: [],
     createdAt: now,
     updatedAt: now,
   }
-}
-
-/** Fields still missing before research can start. Empty means ready. */
-export function missingFields(prefs: Preferences): (keyof Preferences)[] {
-  const required = REQUIRED_FIELDS[prefs.mode ?? 'rent']
-  return required.filter((f) => prefs[f] === undefined || prefs[f] === null)
 }

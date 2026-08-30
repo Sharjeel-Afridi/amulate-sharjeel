@@ -20,4 +20,4 @@ loadEnv()
 const { startTracing } = await import('./otel/index.js')
 startTracing()
 
-await import('./index.js')
+await import('./server.js')
