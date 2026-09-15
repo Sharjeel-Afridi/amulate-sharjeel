@@ -1,5 +1,6 @@
 import type { Preferences, RentalListing } from '@car/shared'
 import { type Contribution, type Scored, composeScore } from './compose.js'
+import { emphasised } from './emphasis.js'
 import type { RentalStats } from './peers.js'
 import { sharedContributions } from './shared-factors.js'
 import {
@@ -38,7 +39,19 @@ export const RENT_WEIGHTS = {
   excess: 4,
 } as const
 
+/** Which weights a stated priority amplifies. Read alongside the table above. */
+const RENT_EMPHASIS: Partial<Record<string, readonly (keyof typeof RENT_WEIGHTS)[]>> = {
+  economy: ['runningCosts'],
+  boot: ['bootLitres'],
+  seats: ['seats'],
+  rating: ['rating'],
+  value: ['monthlyRate', 'excess'],
+  kms: ['freeKm'],
+  flexibility: ['instantBook', 'minRentalDays'],
+}
+
 export function scoreRental(listing: RentalListing, prefs: Preferences, stats: RentalStats): Scored {
+  const W = emphasised(RENT_WEIGHTS, prefs, RENT_EMPHASIS)
   const out: Contribution[] = []
 
   if (prefs.budgetMax !== undefined) {
@@ -46,7 +59,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
     const gap = budget - listing.monthlyRate
     out.push({
       label: 'Monthly rate',
-      weight: RENT_WEIGHTS.monthlyRate,
+      weight: W.monthlyRate,
       sub: budgetSub(listing.monthlyRate, budget),
       detail:
         gap >= 0
@@ -57,7 +70,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
     // No budget stated, so the rate is judged only against what else came back.
     out.push({
       label: 'Monthly rate',
-      weight: RENT_WEIGHTS.monthlyRate,
+      weight: W.monthlyRate,
       sub: signed(lowerIsBetter(listing.monthlyRate, stats.monthlyRate)),
       detail: `${priceText(listing.monthlyRate)} a month, against ${priceText(stats.monthlyRate.min)}–${priceText(stats.monthlyRate.max)} here`,
     })
@@ -66,7 +79,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
   const unlimited = listing.freeKmPerDay >= UNLIMITED_KM
   out.push({
     label: 'Free kilometres',
-    weight: RENT_WEIGHTS.freeKm,
+    weight: W.freeKm,
     // An absolute scale, not a peer one: 100 km/day is tight and 250 is
     // generous regardless of what else happens to be in this shortlist.
     sub: unlimited ? 1 : signed(position(listing.freeKmPerDay, 100, 250)),
@@ -79,7 +92,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
   const tooLong = tripDays !== undefined && listing.minRentalDays > tripDays
   out.push({
     label: 'Minimum hire',
-    weight: RENT_WEIGHTS.minRentalDays,
+    weight: W.minRentalDays,
     // A minimum longer than the trip is a hard problem, not a mild one: the
     // user would be paying for days they cannot use.
     sub: tooLong ? -1 : signed(1 - position(listing.minRentalDays, 1, 3)),
@@ -90,7 +103,7 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
 
   out.push({
     label: 'Instant booking',
-    weight: RENT_WEIGHTS.instantBook,
+    weight: W.instantBook,
     // Not bookable on the spot is an inconvenience rather than a fault, so the
     // downside is half the upside.
     sub: listing.instantBook ? 1 : -0.5,
@@ -101,12 +114,12 @@ export function scoreRental(listing: RentalListing, prefs: Preferences, stats: R
 
   out.push({
     label: 'Insurance excess',
-    weight: RENT_WEIGHTS.excess,
+    weight: W.excess,
     sub: signed(1 - position(listing.excess, 300, 1500)),
     detail: `${priceText(listing.excess)} insurance excess if anything happens`,
   })
 
-  out.push(...sharedContributions(listing, prefs, stats, RENT_WEIGHTS))
+  out.push(...sharedContributions(listing, prefs, stats, W))
 
   return composeScore(out)
 }

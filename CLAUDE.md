@@ -51,6 +51,7 @@ packages/
   shared/           shared types, criteria evaluation
   catalog/          mock marketplace data + deterministic generator
   ranking/          the deterministic scorer and its rationales
+  question-engine/  the adaptive interview's auction, confidence and stopping
 specs/              spec-driven development artefacts
 ```
 
@@ -59,8 +60,11 @@ Inside `apps/api/src`:
 ```
 server.ts       routes only
 session.ts      the session store and the TurnContext a driver gets
-questions.ts    the interview plan and the spec sheet it renders as
+questions.ts    the question bank (wording, controls, auction metadata) and
+                the spec sheet it renders as
+episodes.ts     the question→answer→outcome log, with propensities
 flow/           the journey, one file per step of the pipeline
+  interview.ts    the adaptive loop: decide → present → record, per turn
   criteria.ts     preferences → criteria (pure, derived at point of use)
   search.ts       marketplace fetch + screening
   rank.ts         scorer, then model — the ONLY model/fallback branch
@@ -82,6 +86,9 @@ agents/         the model-facing parts: provider, ranker, conversational tools
   `rankedBy`, or trim the shortlist.
 - **A driver only handles typed text.** Anything a rendered control fires goes in
   `drivers/index.ts`, once, for both drivers.
+- **The auction picks the next question; a model never does.** The adaptive
+  loop is deterministic given its RNG, and every turn logs the propensity the
+  winner was chosen with — that is what makes the episode log learnable-from.
 - **Counts and money are ours, never the model's.** It supplies judgement; the
   arithmetic in the copy comes from `flow/present.ts`.
 

@@ -1,10 +1,16 @@
-import type { DriverMode, SessionState } from '@car/shared'
+import type { DriverMode, InterviewStyle, SessionState } from '@car/shared'
 import cors from 'cors'
 import express, { type Request, type Response } from 'express'
-import { type Driver, handleAppToolResult, handleUiAction } from './drivers/index.js'
+import {
+  type Driver,
+  advanceAdaptive,
+  handleAppToolResult,
+  handleUiAction,
+} from './drivers/index.js'
 import { LlmDriver } from './drivers/agent.js'
 import { ScriptedDriver } from './drivers/scripted.js'
 import { readAgentConfig } from './agents/provider.js'
+import { getEpisode, questionStats } from './episodes.js'
 import { sseFrame } from './events.js'
 import { callToolJson, health } from './mcp.js'
 import { readOtelConfig, tracingEnabled, withTurn } from './otel/index.js'
@@ -52,6 +58,14 @@ const llm: Driver | undefined = (() => {
 
 const DEFAULT_MODE: DriverMode =
   process.env.AGENT_MODE?.trim().toLowerCase() === 'scripted' || !llm ? 'scripted' : 'agent'
+
+/**
+ * Adaptive is the product; the form is the fallback and the control arm of the
+ * adaptive-vs-form experiment. `INTERVIEW_STYLE=form` flips the default, and a
+ * session can ask for either explicitly when it is created.
+ */
+const DEFAULT_STYLE: InterviewStyle =
+  process.env.INTERVIEW_STYLE?.trim().toLowerCase() === 'form' ? 'form' : 'adaptive'
 
 /** Falls back rather than failing: a session asking for an absent driver gets scripted. */
 const driverFor = (state: SessionState): Driver =>
@@ -120,8 +134,24 @@ app.get('/api/health', async (_req, res) => {
   })
 })
 
-app.post('/api/session', (_req, res) => {
-  const state = createSession(DEFAULT_MODE)
+/** The session's episode — the full question/answer/outcome trail. */
+app.get('/api/session/:id/episode', (req, res) => {
+  if (!session(req, res)) return
+  const episode = getEpisode(sessionId(req))
+  if (!episode) return res.status(404).json({ error: 'no episode recorded yet' })
+  return res.json(episode)
+})
+
+/** Per-question effectiveness over this process's sessions. */
+app.get('/api/question-stats', (_req, res) => {
+  res.json(questionStats())
+})
+
+app.post('/api/session', (req, res) => {
+  const asked = String(req.body?.style ?? '').toLowerCase()
+  const style: InterviewStyle =
+    asked === 'form' || asked === 'adaptive' ? (asked as InterviewStyle) : DEFAULT_STYLE
+  const state = createSession(DEFAULT_MODE, style)
   res.json({
     sessionId: state.sessionId,
     state,
@@ -180,7 +210,12 @@ app.get('/api/session/:id/stream', (req, res) => {
   res.write(sseFrame({ type: 'a2ui', messages: initSurfaces() }))
   // Replay the catalogue so a reconnect doesn't land on an empty stage.
   if (state.shortlist.length > 0) {
-    res.write(sseFrame({ type: 'a2ui', messages: buildCatalogueSurface(state.shortlist) }))
+    res.write(
+      sseFrame({
+        type: 'a2ui',
+        messages: buildCatalogueSurface(state.shortlist, { criteria: state.criteria }),
+      }),
+    )
   }
   res.write(sseFrame({ type: 'a2ui', messages: buildJourneySurface(state) }))
 
@@ -188,8 +223,17 @@ app.get('/api/session/:id/stream', (req, res) => {
   // the user to guess they should type first. Tagged so a reconnect replaces the
   // greeting rather than stacking a second copy.
   if (state.phase === 'interview') {
-    res.write(sseFrame({ type: 'message', text: "Let's find you the right car.", tag: 'greeting' }))
-    res.write(sseFrame({ type: 'a2ui', messages: buildInterviewFormSurface(state) }))
+    const adaptive = state.interview.style === 'adaptive'
+    res.write(
+      sseFrame({
+        type: 'message',
+        text: adaptive
+          ? "Let's find you the right car — a few quick taps is all it takes."
+          : "Let's find you the right car.",
+        tag: 'greeting',
+      }),
+    )
+    if (!adaptive) res.write(sseFrame({ type: 'a2ui', messages: buildInterviewFormSurface(state) }))
   }
 
   const unsubscribe = subscribe(sessionId(req), (event) => res.write(sseFrame(event)))
@@ -198,6 +242,15 @@ app.get('/api/session/:id/stream', (req, res) => {
     clearInterval(heartbeat)
     unsubscribe()
   })
+
+  // The adaptive interview's first (or current) question, sent through the
+  // subscription so this client and any others render the same thing.
+  // Idempotent on reconnect: an open question is re-presented, never re-chosen.
+  if (state.phase === 'interview' && state.interview.style === 'adaptive') {
+    void advanceAdaptive(driverFor(state), makeContext(state)).catch((err) =>
+      console.error('[api] adaptive kick-off failed:', err),
+    )
+  }
 })
 
 app.post('/api/session/:id/message', async (req, res) => {

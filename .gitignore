@@ -18,3 +18,6 @@ coverage/
 
 # Widget previews rendered by `npm run preview -w @car/mcp-marketplace`.
 apps/web/public/__widget-*.html
+
+# Episode logs appended by the api at runtime.
+apps/api/data/

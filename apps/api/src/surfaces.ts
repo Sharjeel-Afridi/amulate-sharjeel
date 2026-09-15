@@ -1,4 +1,15 @@
-import { CURRENCY_SYMBOL, type RankedListing, type SessionState, isRental, money } from '@car/shared'
+import {
+  CURRENCY_SYMBOL,
+  type Criterion,
+  type Listing,
+  type Preferences,
+  type RankedListing,
+  type SessionState,
+  assess,
+  isRental,
+  money,
+  priorityLabel,
+} from '@car/shared'
 import {
   type A2uiComponent,
   type A2uiMessage,
@@ -11,7 +22,7 @@ import {
   updateComponents,
   updateDataModel,
 } from './a2ui.js'
-import { specSheet } from './questions.js'
+import { type Question, specSheet } from './questions.js'
 
 /**
  * Server-side A2UI surface builders.
@@ -176,7 +187,7 @@ export function buildSearchingSurface(): A2uiMessage[] {
 }
 
 /** One card's worth of data, shared by the shortlist and the tail. */
-function cardData(entry: RankedListing, nearMiss: boolean) {
+function cardData(entry: RankedListing, nearMiss: boolean, criteria: Criterion[]) {
   const { listing, rank, score, rationale } = entry
   const rental = isRental(listing)
   return {
@@ -195,14 +206,76 @@ function cardData(entry: RankedListing, nearMiss: boolean) {
     price: rental ? listing.monthlyRate : listing.price,
     period: rental ? 'month' : '',
     rationale,
+    // Each condition the user stated, checked against this car — the card
+    // argues its place instead of asserting it.
+    points: cardPoints(listing, criteria),
     // The winner's highlight is a claim that this one is the answer. Nothing
     // qualified, so nothing gets it.
     selected: rank === 1 && !nearMiss,
   }
 }
 
+/** One row of the ranking's argument, in VerdictRow's vocabulary. */
+interface VerdictPoint {
+  title: string
+  detail?: string
+  tone: 'pass' | 'miss' | 'plus' | 'minus' | 'note'
+  badge?: string
+}
+
+const KIND_BADGE = {
+  exclusion: 'Dealbreaker',
+  requirement: 'Must-have',
+  preference: 'Preference',
+} as const
+
+/**
+ * The user's criteria, checked against one car — misses first, because the
+ * trade-offs are what the reader is deciding on, and hard conditions before
+ * soft ones. Every row quotes the user's own phrasing (`criterion.label`) and
+ * the car's evidence, which is what makes the ranking feel *answered* rather
+ * than asserted.
+ */
+function criteriaPoints(listing: Listing, criteria: Criterion[]): VerdictPoint[] {
+  const hardness = (c: Criterion) => (c.kind === 'preference' ? 1 : 0)
+  return assess(listing, criteria)
+    .verdicts.sort(
+      (a, b) =>
+        Number(a.passed) - Number(b.passed) || hardness(a.criterion) - hardness(b.criterion),
+    )
+    .map((v) => ({
+      title: v.criterion.label,
+      detail: v.evidence,
+      tone: v.passed ? ('pass' as const) : ('miss' as const),
+      badge: KIND_BADGE[v.criterion.kind],
+    }))
+}
+
 /** How many results get the full-height treatment before the tail compacts. */
 const LEAD_COUNT = 3
+
+/** How many verdict rows fit on a results card before they crowd the photo. */
+const CARD_POINTS = 4
+
+/**
+ * A card's worth of the argument: every miss, then as many passes as fit, then
+ * the rest of the passes rolled into one honest line rather than dropped.
+ */
+function cardPoints(listing: Listing, criteria: Criterion[]): VerdictPoint[] {
+  const points = criteriaPoints(listing, criteria)
+  if (points.length <= CARD_POINTS) return points
+
+  const kept = points.slice(0, CARD_POINTS - 1)
+  const rest = points.slice(CARD_POINTS - 1)
+  const missed = rest.filter((p) => p.tone === 'miss').length
+  const met = rest.length - missed
+  // The fold stays honest: misses are never rolled into a "meets more" line.
+  const summary: VerdictPoint =
+    missed > 0
+      ? { title: `${met} more conditions met · ${missed} more missed`, tone: 'note' }
+      : { title: `Meets ${met} more of your conditions`, tone: 'pass' }
+  return [...kept, summary]
+}
 
 /**
  * The headline over the ranked catalogue.
@@ -231,10 +304,14 @@ function headline(total: number, nearMiss: boolean, stretched: number): string {
  */
 export function buildCatalogueSurface(
   shortlist: RankedListing[],
-  { nearMiss = false, stretched = 0 }: { nearMiss?: boolean; stretched?: number } = {},
+  {
+    nearMiss = false,
+    stretched = 0,
+    criteria = [],
+  }: { nearMiss?: boolean; stretched?: number; criteria?: Criterion[] } = {},
 ): A2uiMessage[] {
-  const lead = shortlist.slice(0, LEAD_COUNT).map((e) => cardData(e, nearMiss))
-  const tail = shortlist.slice(LEAD_COUNT).map((e) => cardData(e, nearMiss))
+  const lead = shortlist.slice(0, LEAD_COUNT).map((e) => cardData(e, nearMiss, criteria))
+  const tail = shortlist.slice(LEAD_COUNT).map((e) => cardData(e, nearMiss, criteria))
 
   // Declared once as a template and fanned out over the arrays, so re-ranking is
   // a data-model patch instead of a full component rebuild.
@@ -266,11 +343,21 @@ export function buildCatalogueSurface(
 
       templated('grid', 'carRow', '/cars'),
       card('carRow', 'carBody', false),
-      column('carBody', ['carMeta', 'carWhy']),
+      column('carBody', ['carMeta', 'carWhy', 'carP0', 'carP1', 'carP2', 'carP3']),
       ...metaRow('car'),
       // The rationale is structural, not decorative — it is what makes this a
       // recommendation rather than a listings page.
       { id: 'carWhy', component: 'ReasoningStep', title: { path: 'rationale' }, status: 'done' },
+      // The user's conditions, checked against this car. Fixed slots rather
+      // than a nested fan-out: a VerdictRow with no title renders nothing, so
+      // shorter lists just leave slots empty.
+      ...[0, 1, 2, 3].map((i) => ({
+        id: `carP${i}`,
+        component: 'VerdictRow',
+        title: { path: `points/${i}/title` },
+        detail: { path: `points/${i}/detail` },
+        tone: { path: `points/${i}/tone` },
+      })),
 
       text('restHeading', { path: '/restHeadline' }, 'h5'),
       templated('rest', 'restRow', '/rest'),
@@ -281,17 +368,44 @@ export function buildCatalogueSurface(
 }
 
 /**
- * Stage: one car, in full.
+ * Stage: one car, in full — and the ranking's whole argument for it.
  *
  * Tapping a card used to open the booking form directly, which asked someone to
  * commit to several hundred euros off four spec chips and a one-line rationale.
- * This is the step in between: the whole specification, and the scoring broken
- * out factor by factor, so the ranking can be argued with before it is acted on.
+ * This is the step in between, and it answers one question above all: *was what
+ * I said actually taken into account?* So the page leads with the user's own
+ * criteria checked one by one against this car — dealbreakers, must-haves,
+ * preferences, each with the car's evidence — then the scoring factor by
+ * factor, then the plain specification. Everything at reading size.
  */
-export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
-  const { listing, score, rationale, factors } = entry
+export function buildCarDetailSurface(
+  entry: RankedListing,
+  criteria: Criterion[],
+  prefs: Preferences,
+): A2uiMessage[] {
+  const { listing, score, rationale, factors, rank } = entry
   const rental = isRental(listing)
   const spec = (label: string, value: string) => ({ label, value, filled: true })
+
+  // The user's conditions first; their stated priorities after, as notes —
+  // they weighted the ranking rather than filtered it, and saying so is part
+  // of showing the input was used.
+  const checks: VerdictPoint[] = [
+    ...criteriaPoints(listing, criteria),
+    ...(prefs.priorities ?? []).map((id) => ({
+      title: priorityLabel(id),
+      detail: 'You said this matters most — it counts double in this ranking.',
+      tone: 'note' as const,
+      badge: 'Priority',
+    })),
+  ]
+
+  const scoreRows: VerdictPoint[] = factors.map((f) => ({
+    title: f.label,
+    detail: f.detail,
+    tone: f.delta >= 0 ? ('plus' as const) : ('minus' as const),
+    badge: `${f.delta >= 0 ? '+' : ''}${Math.round(f.delta)} pts`,
+  }))
 
   const specs = [
     spec('Category', listing.category.toUpperCase()),
@@ -314,6 +428,15 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
       : spec('Mileage', `${listing.mileageKm.toLocaleString('en-IE')} km`),
   ]
 
+  const verdictLine = (id: string): A2uiComponent => ({
+    id,
+    component: 'VerdictRow',
+    title: { path: 'title' },
+    detail: { path: 'detail' },
+    tone: { path: 'tone' },
+    badge: { path: 'badge' },
+  })
+
   return [
     updateDataModel(SURFACES.stage, '/', {
       car: {
@@ -332,14 +455,11 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
         period: rental ? 'month' : '',
         rationale,
       },
-      specs,
+      checks,
       // Signed so the trade-offs read as trade-offs — a card that only lists what
       // a car is good at is marketing, not a recommendation.
-      scoreRows: factors.map((f) => ({
-        label: f.label,
-        value: `${f.delta >= 0 ? '+' : ''}${Math.round(f.delta)} · ${f.detail}`,
-        filled: true,
-      })),
+      scoreRows,
+      specs,
     }),
     updateComponents(SURFACES.stage, [
       column('root', [
@@ -347,10 +467,12 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
         'hero',
         'whyHeading',
         'why',
-        'specHeading',
-        'specs',
+        'checksHeading',
+        'checks',
         'scoreHeading',
         'scores',
+        'specHeading',
+        'specs',
         'bookBtn',
       ]),
       // A Column stretches its children, which turns a back link into a
@@ -371,15 +493,215 @@ export function buildCarDetailSurface(entry: RankedListing): A2uiMessage[] {
       },
       ...metaRow('hero', '/car/'),
       text('whyHeading', 'Why it placed here', 'h5'),
-      { id: 'why', component: 'ReasoningStep', title: { path: '/car/rationale' }, status: 'done' },
+      {
+        id: 'why',
+        component: 'VerdictRow',
+        title: { path: '/car/rationale' },
+        tone: 'pass',
+        badge: `Ranked #${rank}`,
+      },
+      text('checksHeading', 'Your answers, checked against this car', 'h5'),
+      templated('checks', 'checkLine', '/checks'),
+      verdictLine('checkLine'),
+      text('scoreHeading', 'How the score adds up', 'h5'),
+      templated('scores', 'scoreLine', '/scoreRows'),
+      verdictLine('scoreLine'),
       text('specHeading', 'Specification', 'h5'),
       templated('specs', 'specLine', '/specs'),
       readOnlyRow('specLine'),
-      text('scoreHeading', 'How it scored', 'h5'),
-      templated('scores', 'scoreLine', '/scoreRows'),
-      readOnlyRow('scoreLine'),
-      button('bookBtn', 'bookLabel', 'bookCar', 'primary', { listingId: listing.id }),
-      text('bookLabel', rental ? 'Book this car' : 'Reserve this car'),
+      {
+        id: 'bookBtn',
+        component: 'ChoiceButton',
+        kind: 'cta',
+        label: rental ? 'Book this car' : 'Reserve this car',
+        action: { event: { name: 'bookCar', context: { listingId: listing.id } } },
+      },
+    ]),
+  ]
+}
+
+/* ------------------------------------------------------ adaptive interview */
+
+/** Everything the one-question card needs to know beyond the question itself. */
+export interface AdaptiveQuestionInfo {
+  /** Cars currently passing every hard criterion — the narrowing counter. */
+  pool: number
+  /** 1-based "Question N" position. */
+  index: number
+  /** Multi-select picks accumulated so far, before Done commits them. */
+  draft: string[]
+  renting: boolean
+  skippable: boolean
+  /** Whether "show matches now" is worth offering yet. */
+  searchable: boolean
+}
+
+/** Option buttons, paired into rows once the list gets tall. */
+function optionGrid(
+  options: { label: string; value: string }[],
+  make: (opt: { label: string; value: string }, i: number) => A2uiComponent,
+): { rootIds: string[]; components: A2uiComponent[] } {
+  const components: A2uiComponent[] = []
+  const ids: string[] = []
+  for (const [i, opt] of options.entries()) {
+    const btn = make(opt, i)
+    components.push({ ...btn, weight: 1 })
+    ids.push(String(btn.id))
+  }
+  if (options.length <= 4) return { rootIds: ids, components }
+
+  const rowIds: string[] = []
+  for (let i = 0; i < ids.length; i += 2) {
+    const rowId = `qOptRow${i / 2}`
+    rowIds.push(rowId)
+    components.push(row(rowId, ids.slice(i, i + 2), { align: 'stretch' }))
+  }
+  return { rootIds: rowIds, components }
+}
+
+/**
+ * The adaptive interview's one-question card.
+ *
+ * Everything is a tap: chip questions render as real buttons, the budget
+ * slider as quick-pick bands off the same values the auction simulates, and
+ * multi-selects as toggles committed by one Done. Free text falls back to the
+ * SpecRow input. The pool counter at the top is the reward loop — every answer
+ * visibly narrows the pool, which is what keeps people answering.
+ */
+export function buildAdaptiveQuestionSurface(
+  question: Question,
+  info: AdaptiveQuestionInfo,
+): A2uiMessage[] {
+  const components: A2uiComponent[] = []
+  const bodyIds: string[] = []
+  const answerAction = (value: string) => ({
+    event: { name: 'answerQuestion', context: { questionId: question.id, value } },
+  })
+
+  const optionButton = (
+    opt: { label: string; value: string },
+    i: number,
+    selected = false,
+    toggle = false,
+  ): A2uiComponent => ({
+    id: `qOpt${i}`,
+    component: 'ChoiceButton',
+    label: opt.label,
+    selected,
+    action: toggle
+      ? { event: { name: 'toggleAnswer', context: { questionId: question.id, value: opt.value } } }
+      : answerAction(opt.value),
+  })
+
+  switch (question.control) {
+    case 'chips': {
+      const grid = optionGrid(question.options ?? [], (opt, i) => optionButton(opt, i))
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      break
+    }
+    case 'slider': {
+      // The quick-pick bands are the auction's own simulated answers — the
+      // question is priced on exactly the values it offers.
+      const bands = (question.simValues ?? []).map((v) => ({
+        label: `Up to ${money(Number(v))}${info.renting ? '/mo' : ''}`,
+        value: String(v),
+      }))
+      const grid = optionGrid(bands, (opt, i) => optionButton(opt, i))
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      break
+    }
+    case 'multi': {
+      const grid = optionGrid(question.options ?? [], (opt, i) =>
+        optionButton(opt, i, info.draft.includes(opt.value), true),
+      )
+      components.push(...grid.components)
+      bodyIds.push(...grid.rootIds)
+      components.push(
+        {
+          id: 'qDone',
+          component: 'Button',
+          child: 'qDoneLabel',
+          variant: 'primary',
+          action: { event: { name: 'submitAnswer', context: { questionId: question.id } } },
+        },
+        text(
+          'qDoneLabel',
+          info.draft.length > 0 ? `Done — ${info.draft.length} picked` : 'None of these',
+        ),
+      )
+      bodyIds.push('qDone')
+      break
+    }
+    default: {
+      // Free text (and any future control) rides the same SpecRow the form
+      // uses, pointed at answerQuestion instead of editSpec.
+      components.push({
+        id: 'qInput',
+        component: 'SpecRow',
+        label: '',
+        value: { path: '/q/value' },
+        filled: { path: '/q/filled' },
+        questionId: { path: '/q/questionId' },
+        control: { path: '/q/control' },
+        options: { path: '/q/options' },
+        editValue: { path: '/q/editValue' },
+        min: question.min ?? 0,
+        max: question.max ?? 0,
+        step: question.step ?? 1,
+        unit: question.unit ?? '',
+        action: {
+          event: {
+            name: 'answerQuestion',
+            context: { questionId: { path: '/q/questionId' }, value: { path: '/q/editValue' } },
+          },
+        },
+      })
+      bodyIds.push('qInput')
+    }
+  }
+
+  const footerIds: string[] = []
+  if (info.skippable) {
+    components.push({
+      id: 'qSkip',
+      component: 'ChoiceButton',
+      label: 'Skip this one',
+      kind: 'quiet',
+      action: { event: { name: 'skipQuestion', context: { questionId: question.id } } },
+    })
+    footerIds.push('qSkip')
+  }
+  if (info.searchable) {
+    components.push({
+      id: 'qSearchNow',
+      component: 'ChoiceButton',
+      label: 'Show me the matches now',
+      kind: 'quiet',
+      action: { event: { name: 'confirmSpec', context: {} } },
+    })
+    footerIds.push('qSearchNow')
+  }
+  if (footerIds.length > 0) components.push(row('qFooter', footerIds, { justify: 'center' }))
+
+  return [
+    updateDataModel(SURFACES.interview, '/', {
+      progress: `Question ${info.index} · ${info.pool} cars in play`,
+      q: {
+        questionId: question.id,
+        control: question.control,
+        options: question.options ?? [],
+        value: '',
+        editValue: '',
+        filled: false,
+      },
+    }),
+    updateComponents(SURFACES.interview, [
+      column('root', ['qProgress', 'qAsk', ...bodyIds, ...(footerIds.length ? ['qFooter'] : [])]),
+      text('qProgress', { path: '/progress' }, 'caption'),
+      text('qAsk', question.ask, 'h5'),
+      ...components,
     ]),
   ]
 }

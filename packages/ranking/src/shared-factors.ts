@@ -1,5 +1,6 @@
 import { CATEGORY_LABELS, type Listing, type Preferences } from '@car/shared'
 import type { Contribution } from './compose.js'
+import { hasPriority } from './emphasis.js'
 import type { CommonStats } from './peers.js'
 import {
   clamp,
@@ -68,6 +69,15 @@ export function sharedContributions(
           ? `${litres(listing.bootLitres)}, ${litres(gap)} over your ${litres(min)} minimum`
           : `${litres(listing.bootLitres)}, ${litres(-gap)} short of your ${litres(min)} minimum`,
     })
+  } else if (hasPriority(prefs, 'boot')) {
+    // No floor stated, but boot space made the priority list — judge it against
+    // the peers, so the stated priority genuinely reorders the shortlist.
+    out.push({
+      label: 'Boot space',
+      weight: weights.bootLitres,
+      sub: signed(higherIsBetter(listing.bootLitres, stats.bootLitres)),
+      detail: `${litres(listing.bootLitres)}, against ${litres(stats.bootLitres.min)}–${litres(stats.bootLitres.max)} here`,
+    })
   }
 
   if (prefs.seatsMin !== undefined) {
@@ -81,6 +91,13 @@ export function sharedContributions(
         short <= 0
           ? `${plural(listing.seats, 'seat')}, against the ${min} you need`
           : `${plural(listing.seats, 'seat')}, ${short} short of the ${min} you need`,
+    })
+  } else if (hasPriority(prefs, 'seats')) {
+    out.push({
+      label: 'Seats',
+      weight: weights.seats,
+      sub: signed(higherIsBetter(listing.seats, stats.seats)),
+      detail: `${plural(listing.seats, 'seat')}, against ${stats.seats.min}–${stats.seats.max} here`,
     })
   }
 

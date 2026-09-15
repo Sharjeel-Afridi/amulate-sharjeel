@@ -391,6 +391,91 @@ export const SpecRow = createComponentImplementation(SpecRowApi, ({ props }) => 
   )
 })
 
+export const ChoiceButtonApi = {
+  name: 'ChoiceButton',
+  schema: z.object({
+    ...commonProps,
+    label: CommonSchemas.DynamicString,
+    /** Reads as picked — the adaptive interview's multi-select toggles. */
+    selected: CommonSchemas.DynamicBoolean.optional(),
+    /** 'quiet' renders as a text link — skip/escape actions, not answers. */
+    kind: CommonSchemas.DynamicString.optional(),
+    action: CommonSchemas.Action.optional(),
+  }),
+}
+
+/**
+ * A tappable answer option for the adaptive interview.
+ *
+ * The interview's CSS deliberately turns every plain Button into the lime
+ * call-to-action, so answer options need their own identity: full-width,
+ * neutral until hovered, and visibly "picked" when a multi-select holds them.
+ * The `chip` class is what exempts them from the CTA styling.
+ */
+export const ChoiceButton = createComponentImplementation(ChoiceButtonApi, ({ props }) => (
+  <button
+    type="button"
+    className={
+      'chip choice' +
+      (props.selected ? ' choice--selected' : '') +
+      (props.kind === 'quiet' ? ' choice--quiet' : '') +
+      (props.kind === 'cta' ? ' choice--cta' : '')
+    }
+    onClick={() => props.action?.()}
+  >
+    {typeof props.label === 'string' ? props.label : ''}
+  </button>
+))
+
+export const VerdictRowApi = {
+  name: 'VerdictRow',
+  schema: z.object({
+    ...commonProps,
+    title: CommonSchemas.DynamicString,
+    detail: CommonSchemas.DynamicString.optional(),
+    /** 'pass' | 'miss' | 'plus' | 'minus' | 'note' — picks the icon and colour. */
+    tone: CommonSchemas.DynamicString.optional(),
+    /** Small tag on the right — "Dealbreaker", "Must-have", "+7 pts". */
+    badge: CommonSchemas.DynamicString.optional(),
+  }),
+}
+
+const VERDICT_ICONS: Record<string, string> = {
+  pass: '✓',
+  miss: '✕',
+  plus: '+',
+  minus: '−',
+  note: '•',
+}
+
+/**
+ * One checked claim about one car: the user's own criterion on the left, the
+ * car's evidence under it, the verdict as the icon. This is how the ranking
+ * justifies itself — a list of these reads as "here is what you asked for,
+ * and here is how this car did on each one".
+ *
+ * Renders nothing when the title is empty, so a fixed set of rows can be bound
+ * to a variable-length list without leaving empty bullets behind.
+ */
+export const VerdictRow = createComponentImplementation(VerdictRowApi, ({ props }) => {
+  const title = typeof props.title === 'string' ? props.title : ''
+  if (!title) return null
+  const tone = typeof props.tone === 'string' && props.tone in VERDICT_ICONS ? props.tone : 'note'
+
+  return (
+    <div className={`a2ui-verdict a2ui-verdict--${tone}`}>
+      <span className="a2ui-verdict__icon" aria-hidden="true">
+        {VERDICT_ICONS[tone]}
+      </span>
+      <span className="a2ui-verdict__body">
+        <span className="a2ui-verdict__title">{title}</span>
+        {props.detail ? <span className="a2ui-verdict__detail">{String(props.detail)}</span> : null}
+      </span>
+      {props.badge ? <span className="a2ui-verdict__badge">{String(props.badge)}</span> : null}
+    </div>
+  )
+})
+
 export const ReasoningStepApi = {
   name: 'ReasoningStep',
   schema: z.object({
@@ -423,10 +508,12 @@ export const ReasoningStep = createComponentImplementation(ReasoningStepApi, ({ 
 /** Every custom component, in registration order. */
 export const CUSTOM_COMPONENTS: ReactComponentImplementation[] = [
   CarCard,
+  ChoiceButton,
   MatchScore,
   PriceBadge,
   ReasoningStep,
   SpecRow,
+  VerdictRow,
 ]
 
 /**

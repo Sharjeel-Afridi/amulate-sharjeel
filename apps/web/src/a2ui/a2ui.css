@@ -812,11 +812,25 @@
    h4 is the page's one headline; the h5s are section labels and read as such. */
 .stage .a2ui-host h4 { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; }
 .stage .a2ui-host h5 {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 650;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--faint, #6b7480);
+  margin-top: 16px;
+}
+
+/* The detail view's specification — a readable sheet, not a sparse table:
+   labels and values at body size, generous rows, value flush right. */
+.stage .a2ui-host .a2ui-specrow { padding: 12px 2px; }
+.stage .a2ui-host .a2ui-specrow__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--faint, #6b7480);
+}
+.stage .a2ui-host .a2ui-specrow__value {
+  font-size: 15px;
+  max-width: 58%;
 }
 
 /* One car in full — the detail view is a single column, centred. */
@@ -1033,6 +1047,141 @@
   background: rgba(255, 255, 255, 0.05);
   filter: none;
 }
+
+/* Answer options and stage actions. `chip` exempts them from the interview's
+   CTA rule; `choice` gives them their own shape: neutral until hovered,
+   visibly picked when a multi-select holds them, quiet for escape actions,
+   cta for the one action button a view is built around. */
+.a2ui-host button.choice {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 16px;
+  font-size: 14.5px;
+  font-weight: 550;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text, #f4f6f8);
+}
+.a2ui-host button.choice:hover {
+  border-color: var(--accent, #c8ff3d);
+  background: rgba(200, 255, 61, 0.08);
+}
+.a2ui-host button.choice--selected {
+  border-color: var(--accent, #c8ff3d);
+  background: rgba(200, 255, 61, 0.16);
+  color: var(--accent, #c8ff3d);
+}
+.a2ui-host button.choice--quiet,
+.a2ui-host button.choice--quiet:hover {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+  color: var(--faint, #6b7480);
+}
+.a2ui-host button.choice--quiet:hover {
+  color: var(--text, #f4f6f8);
+  background: rgba(255, 255, 255, 0.05);
+}
+.a2ui-host button.choice--cta,
+.a2ui-host button.choice--cta:hover {
+  margin-top: 14px;
+  padding: 16px 22px;
+  font-size: 16px;
+  font-weight: 700;
+  background: var(--accent, #c8ff3d);
+  border-color: var(--accent, #c8ff3d);
+  color: var(--accent-ink, #14200a);
+}
+.a2ui-host button.choice--cta:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px rgba(200, 255, 61, 0.22);
+}
+
+/* Verdict rows — the user's own criteria, checked against one car. The list
+   is the ranking's argument, so it reads at body size, not caption size. */
+.a2ui-host .a2ui-verdict {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+}
+.a2ui-host .a2ui-verdict:last-child { border-bottom: 0; }
+.a2ui-host .a2ui-verdict__icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  color: var(--faint, #6b7480);
+}
+.a2ui-host :is(.a2ui-verdict--pass, .a2ui-verdict--plus) .a2ui-verdict__icon {
+  background: rgba(200, 255, 61, 0.14);
+  border-color: rgba(200, 255, 61, 0.4);
+  color: var(--accent, #c8ff3d);
+}
+.a2ui-host .a2ui-verdict--miss .a2ui-verdict__icon {
+  background: rgba(255, 122, 122, 0.12);
+  border-color: rgba(255, 122, 122, 0.4);
+  color: #ff8d8d;
+}
+.a2ui-host .a2ui-verdict--minus .a2ui-verdict__icon {
+  background: rgba(255, 190, 110, 0.12);
+  border-color: rgba(255, 190, 110, 0.4);
+  color: #ffc37e;
+}
+.a2ui-host .a2ui-verdict__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.a2ui-host .a2ui-verdict__title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text, #f4f6f8);
+}
+.a2ui-host .a2ui-verdict__detail {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--faint, #6b7480);
+}
+.a2ui-host .a2ui-verdict__badge {
+  flex: none;
+  margin-top: 2px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  color: var(--faint, #6b7480);
+  white-space: nowrap;
+}
+.a2ui-host .a2ui-verdict--miss .a2ui-verdict__badge {
+  border-color: rgba(255, 122, 122, 0.35);
+  color: #ff8d8d;
+}
+
+/* Inside a results card the verdicts tighten up but stay readable. */
+.a2ui-host .a2ui-carcard .a2ui-verdict { padding: 7px 0; }
+.a2ui-host .a2ui-carcard .a2ui-verdict__title { font-size: 13.5px; }
+.a2ui-host .a2ui-carcard .a2ui-verdict__detail { font-size: 12.5px; }
+.a2ui-host .a2ui-carcard .a2ui-verdict__icon { width: 19px; height: 19px; font-size: 10.5px; }
+.a2ui-host .a2ui-carcard .a2ui-verdict__badge { display: none; }
 
 /* Standalone text, date and number answers get real presence. Scoped away from
    the sheet's own inputs, which are sized as rows — without the exclusion this

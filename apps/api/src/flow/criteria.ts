@@ -2,6 +2,7 @@ import {
   type Category,
   type Criterion,
   type FuelType,
+  MAX_PRIORITIES,
   type Preferences,
   type Transmission,
   money,
@@ -71,6 +72,13 @@ export function answerToPreferences(questionId: string, raw: unknown): AnswerOut
     case 'dealbreakers':
       // Replaces rather than appends: unticking one has to actually remove it.
       return set({ dealbreakers: values.filter((v) => v && v !== 'none') })
+    case 'priorities':
+    case 'prioritiesBuy': {
+      // Capped, not just suggested: four "top" priorities dilute the boost each
+      // one buys until none of them reorders anything.
+      const picks = values.filter(Boolean).slice(0, MAX_PRIORITIES)
+      return picks.length > 0 ? set({ priorities: picks }) : clear('priorities')
+    }
     default:
       return none()
   }
@@ -155,6 +163,18 @@ export function buildCriteria(prefs: Preferences): Criterion[] {
       field: 'seats',
       op: 'gte',
       value: prefs.seatsMin,
+    })
+  }
+  if (prefs.transmission) {
+    // A requirement, not a preference: with two gearboxes there is no "close
+    // enough", and someone who cannot drive a manual is not stretching to one.
+    out.push({
+      id: 'transmission',
+      kind: 'requirement',
+      label: prefs.transmission === 'automatic' ? 'An automatic' : 'A manual',
+      field: 'transmission',
+      op: 'eq',
+      value: prefs.transmission,
     })
   }
   if (prefs.maxMileageKm) {

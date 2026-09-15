@@ -1,7 +1,8 @@
 import type { Preferences } from '@car/shared'
-import type { Driver } from './index.js'
+import { type Driver, advanceAdaptive } from './index.js'
 import type { TurnContext } from '../session.js'
 import { runSearch, showInterviewForm, startBooking } from '../flow/index.js'
+import { recordAnswer } from '../flow/interview.js'
 import { extractPreferences } from '../extract.js'
 
 /**
@@ -25,6 +26,22 @@ export class ScriptedDriver implements Driver {
       return startBooking(ctx, listing.id)
     }
 
+    const adaptive =
+      ctx.state.phase === 'interview' && ctx.state.interview.style === 'adaptive'
+
+    // The use-case question wants the person's own words, so while it is on
+    // screen the whole message is the answer — extraction would only keep the
+    // fragments it recognises.
+    if (adaptive && ctx.state.interview.currentQuestionId === 'useCase') {
+      recordAnswer(ctx, 'useCase', text)
+      const patch = extractPreferences(text, ctx.state.preferences)
+      if (Object.keys(patch).length > 0) {
+        ctx.patchPreferences(patch)
+        ctx.step(`Noted ${describe(patch)}`)
+      }
+      return advanceAdaptive(this, ctx)
+    }
+
     // Typing fills the form: "an SUV under €2,000 for five" lands in the same
     // rows the pickers write to, so describing what you want and picking it are
     // two routes to one sheet rather than two competing inputs.
@@ -38,9 +55,17 @@ export class ScriptedDriver implements Driver {
     // "Go" is the typed equivalent of the Search button, and it has to work
     // whether or not the form is complete — every row is optional.
     if (SEARCH_INTENT.test(text)) {
-      ctx.patchInterview({ confirmed: true })
+      ctx.patchInterview({ confirmed: true, currentQuestionId: undefined })
       await runSearch(ctx)
       return
+    }
+
+    // Typed text is one more way of answering the adaptive interview: whatever
+    // it filled, the loop re-decides — the current question stays if its slot
+    // is still open, and a filled one is never asked.
+    if (adaptive) {
+      if (!extracted) ctx.say('Tap an answer above, or just tell me what you need.')
+      return advanceAdaptive(this, ctx)
     }
 
     if (ctx.state.interview.confirmed) {

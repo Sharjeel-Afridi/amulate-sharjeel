@@ -1,5 +1,6 @@
 import {
   type DriverMode,
+  type InterviewStyle,
   type Phase,
   type Preferences,
   type RankedListing,
@@ -25,8 +26,8 @@ type Listener = (event: ServerEvent) => void
 
 const sessions = new Map<string, { state: SessionState; listeners: Set<Listener> }>()
 
-export function createSession(mode: DriverMode): SessionState {
-  const state = createSessionState(randomUUID(), mode)
+export function createSession(mode: DriverMode, style: InterviewStyle = 'adaptive'): SessionState {
+  const state = createSessionState(randomUUID(), mode, style)
   sessions.set(state.sessionId, { state, listeners: new Set() })
   return state
 }

@@ -1,5 +1,5 @@
 import { Agent, MCPServerStreamableHttp, run, withTrace } from '@openai/agents'
-import type { Driver } from './index.js'
+import { type Driver, advanceAdaptive } from './index.js'
 import type { ReorderFn } from '../flow/index.js'
 import type { TurnContext } from '../session.js'
 import { type AgentConfig, configureProvider } from '../agents/provider.js'
@@ -115,6 +115,10 @@ export class LlmDriver implements Driver {
       const output = String(result.finalOutput ?? '').trim()
       console.log(`[agent] turn ok in ${Date.now() - started}ms, ${output.length} chars`)
       ctx.say(output || 'Sorry — I lost my thread there. Could you say that again?')
+
+      // Whatever facts the model recorded, the deterministic loop re-decides:
+      // a filled slot is never asked, an open question stays on screen.
+      await advanceAdaptive(this, ctx)
     } catch (err) {
       // A provider error must not leave the user staring at a dead chat, so it
       // surfaces in the conversation as well as the log.

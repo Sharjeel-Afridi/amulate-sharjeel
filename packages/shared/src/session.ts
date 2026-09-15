@@ -36,6 +36,11 @@ export interface Preferences {
   minYear?: number
   /** Dealbreaker ids from the interview — 'no-diesel', 'strict-budget', … */
   dealbreakers?: string[]
+  /**
+   * Priority ids from PRIORITIES, at most MAX_PRIORITIES of them. These shape
+   * the scorer's weights rather than filtering — see `emphasised` in ranking.
+   */
+  priorities?: string[]
 }
 
 export interface SearchSummary {
@@ -48,6 +53,13 @@ export interface SearchSummary {
   relaxed: string[]
 }
 
+/**
+ * How the interview collects its answers: one adaptively chosen question at a
+ * time, or the whole spec as a single form. Both write the same preferences
+ * through the same handlers — the style is the pacing, not the meaning.
+ */
+export type InterviewStyle = 'adaptive' | 'form'
+
 export interface InterviewState {
   /** Question ids already answered, in order. */
   answered: string[]
@@ -59,6 +71,11 @@ export interface InterviewState {
    * fields would otherwise fire four searches.
    */
   dirty: boolean
+  style: InterviewStyle
+  /** Adaptive only: questions the user declined, never to be re-asked. */
+  skipped: string[]
+  /** Adaptive only: the question currently on screen, if one is. */
+  currentQuestionId?: string
 }
 
 export interface Booking {
@@ -101,13 +118,17 @@ export interface SessionState {
   updatedAt: string
 }
 
-export function createSessionState(sessionId: string, mode: DriverMode = 'scripted'): SessionState {
+export function createSessionState(
+  sessionId: string,
+  mode: DriverMode = 'scripted',
+  style: InterviewStyle = 'form',
+): SessionState {
   const now = new Date().toISOString()
   return {
     sessionId,
     mode,
     phase: 'interview',
-    interview: { answered: [], confirmed: false, dirty: false },
+    interview: { answered: [], confirmed: false, dirty: false, style, skipped: [] },
     preferences: {},
     criteria: [],
     shortlist: [],

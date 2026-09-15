@@ -17,7 +17,7 @@
     "dev:api": "npm run dev -w @car/api",
     "dev:web": "npm run dev -w @car/web",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "for p in packages/shared packages/catalog packages/ranking apps/api apps/mcp-marketplace apps/web; do echo \"typecheck $p\" && tsc -p $p --noEmit || exit 1; done"
+    "typecheck": "for p in packages/shared packages/catalog packages/ranking packages/question-engine apps/api apps/mcp-marketplace apps/web; do echo \"typecheck $p\" && tsc -p $p --noEmit || exit 1; done"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
