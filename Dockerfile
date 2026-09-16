@@ -17,6 +17,7 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/catalog/package.json ./packages/catalog/
 COPY packages/ranking/package.json ./packages/ranking/
+COPY packages/question-engine/package.json ./packages/question-engine/
 COPY apps/mcp-marketplace/package.json ./apps/mcp-marketplace/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
