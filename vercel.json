@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "vite",
+  "framework": null,
   "installCommand": "npm install --include=dev",
   "buildCommand": "npm run build -w @car/web",
   "outputDirectory": "apps/web/dist"
