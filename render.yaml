@@ -1,0 +1,50 @@
+# Blueprint for the two long-lived services. The web tier is on Vercel; only the
+# api and the mcp marketplace need a container, because the api holds SSE
+# streams open and keeps session state in memory.
+#
+# Both services build the same image and differ only in `dockerCommand` —
+# Render cannot select a multi-stage build target, so the targets in the root
+# Dockerfile are unusable here.
+
+services:
+  # The marketplace comes up first; the api dials it over MCP_URL.
+  - type: web
+    name: car-mcp-marketplace
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./docker/Dockerfile.render
+    dockerContext: .
+    dockerCommand: npm run start -w @car/mcp-marketplace
+    healthCheckPath: /health
+    envVars:
+      - key: MCP_PORT
+        value: 10000
+
+  - type: web
+    name: car-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./docker/Dockerfile.render
+    dockerContext: .
+    dockerCommand: npm run start -w @car/api
+    healthCheckPath: /api/health
+    envVars:
+      - key: API_PORT
+        value: 10000
+
+      # Render has no string interpolation, so the full URL cannot be built from
+      # a fromService reference — set it in the dashboard once the marketplace
+      # has an address: https://<mcp-service>.onrender.com/mcp
+      - key: MCP_URL
+        sync: false
+
+      # Leave unset and the deterministic scripted driver serves the whole
+      # journey — no model, no key, no network.
+      - key: AGENT_PROVIDER
+        sync: false
+      - key: AGENT_API_KEY
+        sync: false
+      - key: AGENT_MODEL
+        sync: false

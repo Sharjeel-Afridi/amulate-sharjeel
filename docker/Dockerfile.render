@@ -1,0 +1,37 @@
+# Single-stage image for Render, which cannot select a multi-stage build target.
+#
+# The api and the mcp marketplace share one image and differ only in the command
+# Render runs — see `dockerCommand` per service in render.yaml. Both run
+# TypeScript directly through tsx, so neither needs a build step.
+#
+# The root Dockerfile stays the source of truth for compose, where targets work.
+
+FROM node:22-alpine
+WORKDIR /app
+
+# Manifests first, so a source-only change does not reinstall. Every workspace
+# has to be here or `npm ci` refuses the lockfile as out of sync.
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/catalog/package.json ./packages/catalog/
+COPY packages/ranking/package.json ./packages/ranking/
+COPY packages/question-engine/package.json ./packages/question-engine/
+COPY apps/api/package.json ./apps/api/
+COPY apps/mcp-marketplace/package.json ./apps/mcp-marketplace/
+COPY apps/web/package.json ./apps/web/
+
+# --include=dev because the servers run through tsx, which is a dev dependency.
+# Render exposes env vars at build time, so NODE_ENV=production would otherwise
+# strip the very thing that starts the process.
+RUN npm ci --include=dev
+
+COPY tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+
+# The catalogue is generated from a fixed seed, so a failing verify means the
+# data contract broke — fail the build rather than serve wrong listings.
+RUN npm run verify -w @car/catalog
+
+# Overridden per service by render.yaml; this is only the default.
+CMD ["npm", "run", "start", "-w", "@car/api"]
