@@ -10,6 +10,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * actually knows.
  */
 
+/**
+ * Where the API lives.
+ *
+ * Empty in dev and under compose, where something in front of the app forwards
+ * `/api` — the Vite proxy and docker/nginx.conf respectively. A split deploy has
+ * no such proxy: the web tier is static files on one origin and the API is a
+ * container on another, so the build takes an absolute base instead. The API
+ * already sends permissive CORS, which is what lets both the fetches and the
+ * EventSource cross origins.
+ */
+const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+
 type ServerEvent =
   | { type: 'state'; state: SessionState }
   | { type: 'message'; text: string; tag?: string }
@@ -55,7 +67,7 @@ export function useSession() {
     let source: EventSource | undefined
 
     void (async () => {
-      const res = await fetch('/api/session', { method: 'POST' })
+      const res = await fetch(`${API}/api/session`, { method: 'POST' })
       const body = (await res.json()) as {
         sessionId: string
         state: SessionState
@@ -69,7 +81,7 @@ export function useSession() {
       setState(body.state)
       setAgent({ available: Boolean(body.agentAvailable), name: body.agentName ?? null })
 
-      source = new EventSource(`/api/session/${body.sessionId}/stream`)
+      source = new EventSource(`${API}/api/session/${body.sessionId}/stream`)
       source.onopen = () => setConnected(true)
       source.onerror = () => setConnected(false)
       source.onmessage = (e) => {
@@ -133,7 +145,7 @@ export function useSession() {
     if (!id) return
     setItems((prev) => [...prev, { kind: 'user', id: nextId(), text }])
     setBusy(true)
-    void fetch(`/api/session/${id}/message`, {
+    void fetch(`${API}/api/session/${id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -145,7 +157,7 @@ export function useSession() {
     const id = sessionRef.current
     if (!id) return
     setBusy(true)
-    void fetch(`/api/session/${id}/action`, {
+    void fetch(`${API}/api/session/${id}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, context }),
@@ -167,7 +179,7 @@ export function useSession() {
     // whole of the "thinking…" that used to stay on screen forever.
     setBusy(true)
     try {
-      const res = await fetch(`/api/session/${id}/tool`, {
+      const res = await fetch(`${API}/api/session/${id}/tool`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, arguments: args }),
@@ -193,7 +205,7 @@ export function useSession() {
     const id = sessionRef.current
     if (!id) return
     setState((s) => (s ? { ...s, mode } : s))
-    const res = await fetch(`/api/session/${id}/mode`, {
+    const res = await fetch(`${API}/api/session/${id}/mode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
